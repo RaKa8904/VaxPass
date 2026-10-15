@@ -51,7 +51,13 @@ python -m http.server 8080 --directory frontend
 
 Open `http://localhost:8080`. Add the Hardhat local network to MetaMask (RPC `http://127.0.0.1:8545`, chain ID `31337`, currency `ETH`) and import one of the public development accounts printed by `npm run node`. Never use those development keys on a real network.
 
-Batch QR codes open the public verification route without requiring a wallet. When scanning from another device, serve the frontend on a reachable LAN or hosted URL and set `localStorage.vaxpassFrontendUrl` in the browser before generating the QR, for example `http://192.168.1.20:8080`. A QR containing `localhost` can only be opened on the computer running the server.
+Batch QR codes open the public verification route without requiring a wallet. For phone scanning on the same Wi-Fi network:
+
+```powershell
+python -m http.server 8080 --bind 0.0.0.0 --directory frontend
+```
+
+Open `http://192.168.0.106:8080` on the computer, open a batch passport, and click **Set phone-accessible URL** if the QR still shows `localhost`. Enter the computer's current Wi-Fi address, such as `http://192.168.0.106:8080`. A QR containing `localhost` can only be opened on the computer running the server. Both devices must be on the same Wi-Fi network, and Windows Firewall must allow Python through private networks.
 
 ## Verify each project step
 
