@@ -51,6 +51,8 @@ python -m http.server 8080 --directory frontend
 
 Open `http://localhost:8080`. Add the Hardhat local network to MetaMask (RPC `http://127.0.0.1:8545`, chain ID `31337`, currency `ETH`) and import one of the public development accounts printed by `npm run node`. Never use those development keys on a real network.
 
+Batch QR codes open the public verification route without requiring a wallet. When scanning from another device, serve the frontend on a reachable LAN or hosted URL and set `localStorage.vaxpassFrontendUrl` in the browser before generating the QR, for example `http://192.168.1.20:8080`. A QR containing `localhost` can only be opened on the computer running the server.
+
 ## Verify each project step
 
 1. **Contract:** `npx hardhat compile` should compile `VaxPass.sol`.
