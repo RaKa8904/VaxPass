@@ -30,7 +30,7 @@ On Windows ARM64 with a Node release that cannot build the unused `classic-level
 npm install --ignore-scripts
 ```
 
-Start the blockchain in terminal 1:
+Start the blockchain in terminal 1. The host option lets another device on the same Wi-Fi network read the local chain for QR verification:
 
 ```bash
 npm run node

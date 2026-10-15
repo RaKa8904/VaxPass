@@ -39,7 +39,8 @@ function requireWallet() { if (!write || !account) { toast("Connect MetaMask to 
 async function init() {
   config = await fetch("contract.json").then(r => r.json());
   if (!config.address || !config.abi?.length) { app.innerHTML = `<div class="notice danger">No deployment found. Start a local node and run the deploy script first.</div>`; return; }
-  const rpcUrl = localStorage.getItem("vaxpassRpc") || (Number(config.chainId) === 11155111 ? "https://ethereum-sepolia-rpc.publicnode.com" : "http://127.0.0.1:8545");
+  const localRpcHost = ["localhost", "127.0.0.1"].includes(location.hostname) ? "127.0.0.1" : location.hostname;
+  const rpcUrl = localStorage.getItem("vaxpassRpc") || (Number(config.chainId) === 11155111 ? "https://ethereum-sepolia-rpc.publicnode.com" : `http://${localRpcHost}:8545`);
   read = new ethers.Contract(config.address, config.abi, new ethers.JsonRpcProvider(rpcUrl));
   roleIds = {
     manufacturer: await read.MANUFACTURER_ROLE(), distributor: await read.DISTRIBUTOR_ROLE(),
