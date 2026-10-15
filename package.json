@@ -1,0 +1,27 @@
+{
+  "name": "vaxpass",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Blockchain-based cold-chain vaccine passport and temperature-aware expiry management DApp",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "node": "hardhat node",
+    "deploy:local": "hardhat run scripts/deploy.js --network localhost",
+    "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia",
+    "seed:local": "hardhat run scripts/seed.js --network localhost",
+    "seed:sepolia": "hardhat run scripts/seed.js --network sepolia",
+    "sensor:local": "hardhat run scripts/simulate-sensor.js --network localhost"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-chai-matchers": "2.0.0",
+    "@nomicfoundation/hardhat-ethers": "3.0.0",
+    "@nomicfoundation/hardhat-network-helpers": "1.0.9",
+    "chai": "^4.3.10",
+    "dotenv": "^16.4.5",
+    "hardhat": "2.17.4"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.0.2"
+  }
+}

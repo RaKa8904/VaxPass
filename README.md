@@ -1,0 +1,128 @@
+# VaxPass
+
+VaxPass is a college mini-project demonstrating a blockchain-based cold-chain vaccine passport. It tracks batch custody, temperature readings, temperature-aware effective expiry, recalls, and privacy-preserving dose administration on Ethereum.
+
+> Sensor data in this project is simulated. A production system would need trusted, tamper-resistant hardware and an oracle/attestation design before putting sensor readings on-chain.
+
+## Stack
+
+- Solidity `^0.8.20`, Hardhat, OpenZeppelin `AccessControl`
+- Plain HTML, CSS, and JavaScript; ethers.js v6 and qrcode.js loaded from CDNs
+- MetaMask for transactions, local Hardhat first, then Sepolia
+
+## Prerequisites
+
+- Node.js 20 or 22 LTS is recommended. The project was also validated on Windows ARM64 with Node 24, which makes Hardhat print a compatibility warning.
+- MetaMask browser extension
+- Python 3 (only to serve the static frontend locally)
+
+## Setup and local run
+
+```bash
+npm install
+npx hardhat compile
+npx hardhat test
+```
+
+On Windows ARM64 with a Node release that cannot build the unused `classic-level` native adapter, use this equivalent install command:
+
+```bash
+npm install --ignore-scripts
+```
+
+Start the blockchain in terminal 1:
+
+```bash
+npm run node
+```
+
+Deploy and seed it in terminal 2:
+
+```bash
+npm run deploy:local
+npm run seed:local
+```
+
+`deploy.js` writes the address and ABI to `frontend/contract.json`, so the UI always uses the current deployment. Serve the frontend in terminal 3:
+
+```bash
+python -m http.server 8080 --directory frontend
+```
+
+Open `http://localhost:8080`. Add the Hardhat local network to MetaMask (RPC `http://127.0.0.1:8545`, chain ID `31337`, currency `ETH`) and import one of the public development accounts printed by `npm run node`. Never use those development keys on a real network.
+
+## Verify each project step
+
+1. **Contract:** `npx hardhat compile` should compile `VaxPass.sol`.
+2. **Tests:** `npx hardhat test` runs 12 tests covering roles, custody, readings, spoilage, expiry, recall, privacy hashing, verification, and statistics.
+3. **Deploy/seed:** after the commands above, `frontend/contract.json` has a non-empty address and the console reports approvals plus VX001/VX002 registration.
+4. **Frontend:** open the site, use **Verify** and enter `VX001`; it works without a wallet. Connect MetaMask for write actions.
+5. **Simulator:** dispatch a batch, then log readings as shown below.
+
+## Roles and local demo accounts
+
+The seeded local accounts map to the first five Hardhat accounts:
+
+| Account | Role |
+| --- | --- |
+| #0 | Regulator / deployer |
+| #1 | Manufacturer |
+| #2 | Distributor |
+| #3 | Clinic |
+| #4 | Temperature logger |
+
+An entity first uses **Register role**. The regulator approves that wallet in **Regulator panel**. The seed script performs this approval for the demo accounts.
+
+## Sensor simulator
+
+The batch must be `IN_TRANSIT` or `DELIVERED` before it can receive readings. The demo page lets the manufacturer dispatch VX001 and the distributor accept it.
+
+PowerShell:
+
+```powershell
+$env:BATCH_ID="1"; $env:SENSOR_MODE="normal"; npx hardhat run scripts/simulate-sensor.js --network localhost
+$env:BATCH_ID="1"; $env:SENSOR_MODE="spike";  npx hardhat run scripts/simulate-sensor.js --network localhost
+$env:BATCH_ID="1"; $env:SENSOR_MODE="breach"; npx hardhat run scripts/simulate-sensor.js --network localhost
+```
+
+`normal` emits 2–8 °C readings; `spike` logs a few 12–15 °C excursions; `breach` logs long 20+ °C excursions that exceed the demo budget and mark the batch `SPOILED`.
+
+## Sepolia deployment
+
+1. Copy `.env.example` to `.env`.
+2. Set `SEPOLIA_RPC_URL` to a Sepolia RPC endpoint and `PRIVATE_KEY` to a funded development wallet key (never commit `.env`).
+3. Deploy with `npm run deploy:sepolia`. This updates `frontend/contract.json` to use Sepolia.
+4. Seed optional demo roles/batches with `npm run seed:sepolia`.
+5. Host the `frontend` directory over HTTPS. MetaMask will detect chain ID `11155111` from `contract.json`; switch it to Sepolia before transacting.
+
+For a hosted frontend, replace the default local RPC in `app.js` or save a preferred RPC URL in browser local storage under `vaxpassRpc`.
+
+## Suggested project demonstration
+
+1. Approve the manufacturer, distributor, clinic, and logger roles.
+2. Register VX001 and dispatch it to the distributor.
+3. Log `normal`, then `spike`, then `breach` sensor modes; show the expiry penalty and automatic `SPOILED` result.
+4. Use VX002 for the happy path: dispatch → accept custody → deliver to clinic → distributor confirms handover → clinic confirms receipt.
+5. Administer doses using different patient IDs; explain that only the local `keccak256` hashes are sent on-chain.
+6. Open its Passport, inspect the temperature chart/timeline, and scan its QR code to reach public verification.
+7. Use the regulator panel to recall a batch and show that further actions are blocked.
+
+## Screenshots checklist for the report
+
+- Home screen with connected wallet and recent batches
+- Role request and regulator approval transaction
+- Manufacturer registration form and a new `VX00x` batch
+- Distributor custody acceptance and dual-confirmation flow
+- Temperature chart showing normal and excursion readings
+- Spoiled batch with excursion budget progress
+- Clinic dose administration and privacy statement
+- Batch Passport QR code and public VALID/WARNING/INVALID verification banner
+- Analytics cards/bar chart and regulator recall form
+
+## Contract behavior notes
+
+- A temperature excursion reduces `effectiveExpiry` by `duration × 10 minutes` and never underflows.
+- More than the excursion budget automatically spoils a batch.
+- `verifyBatch` returns `0 = VALID`, `1 = WARNING`, and `2 = INVALID`.
+- `markExpired` is public, letting anyone finalize an expired active batch.
+- The contract stores no patient identity—only a non-reversible `bytes32` patient hash per batch, preventing duplicate administration for that batch.

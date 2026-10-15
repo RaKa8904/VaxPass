@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VaxPass | Cold-chain vaccine passport</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+  <header class="topbar"><a href="#/" class="brand">✚ <span>Vax</span>Pass</a>
+    <button id="menuButton" class="icon-button" aria-label="Open menu">☰</button>
+    <nav id="nav"><a href="#/">Home</a><a href="#/register">Register role</a><a href="#/manufacturer">Manufacturer</a><a href="#/distributor">Distributor</a><a href="#/clinic">Clinic</a><a href="#/regulator">Regulator</a><a href="#/verify">Verify</a><a href="#/analytics">Analytics</a></nav>
+    <button id="connectButton" class="wallet">Connect wallet</button>
+  </header>
+  <main id="app"><div class="loading">Loading VaxPass…</div></main>
+  <div id="toastArea" class="toast-area" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
