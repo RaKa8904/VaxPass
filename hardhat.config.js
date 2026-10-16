@@ -9,8 +9,13 @@ module.exports = {
     settings: { optimizer: { enabled: true, runs: 200 } }
   },
   networks: {
-    hardhat: { gasPrice: 0, initialBaseFeePerGas: 0 },
-    localhost: { url: "http://127.0.0.1:8545", gasPrice: 0 },
+    hardhat: {
+      chainId: 31337
+    },
+    localhost: {
+      url: "http://127.0.0.1:8545",
+      chainId: 31337
+    },
     sepolia: {
       url: process.env.SEPOLIA_RPC_URL || "",
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : []

@@ -344,6 +344,23 @@ function promptAddressModal({ title, subtitle, roleLabel, iconType = "distributo
     ? `<i class="hgi-stroke hgi-truck-delivery"></i>`
     : `<i class="hgi-stroke hgi-hospital-01"></i>`;
 
+  const isLocal = Number(config?.chainId) === 31337;
+  const isDist = roleLabel.toLowerCase().includes("distributor");
+  const isClinic = roleLabel.toLowerCase().includes("clinic");
+  const seededAddress = isDist
+    ? "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
+    : isClinic
+      ? "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
+      : "";
+  const quickFillHtml = isLocal && seededAddress ? `
+    <div style="margin-top: 8px;">
+      <button type="button" id="modalFillSeededBtn" class="address-chip" style="font-size: 0.78rem; padding: 4px 10px; cursor: pointer;">
+        <i class="hgi-stroke hgi-user-check-01"></i>
+        <span>Use default local ${escapeHtml(roleLabel)} (${short(seededAddress)})</span>
+      </button>
+    </div>
+  ` : "";
+
   const bodyHtml = `
     <label for="modalAddressInput">
       ${escapeHtml(roleLabel)} Wallet Address
@@ -354,6 +371,7 @@ function promptAddressModal({ title, subtitle, roleLabel, iconType = "distributo
         </button>
       </div>
     </label>
+    ${quickFillHtml}
     <div id="modalAddressFeedback" class="validation-feedback info">
       <i class="hgi-stroke hgi-information-circle"></i>
       <span>Requires a 42-character Ethereum address (0x…)</span>
@@ -377,6 +395,7 @@ function promptAddressModal({ title, subtitle, roleLabel, iconType = "distributo
       const input = $("#modalAddressInput");
       const feedback = $("#modalAddressFeedback");
       const pasteBtn = $("#modalPasteBtn");
+      const fillSeededBtn = $("#modalFillSeededBtn");
 
       function validate() {
         const val = input.value.trim();
@@ -398,6 +417,12 @@ function promptAddressModal({ title, subtitle, roleLabel, iconType = "distributo
 
       input.addEventListener("input", validate);
       input.focus();
+
+      fillSeededBtn?.addEventListener("click", () => {
+        input.value = seededAddress;
+        validate();
+        input.focus();
+      });
 
       pasteBtn?.addEventListener("click", async () => {
         try {
@@ -743,7 +768,7 @@ async function handleAccountChanged(accounts) {
 
 let isTxPending = false;
 
-async function tx(promise, success = "Transaction confirmed.", functionName = "Transaction", rerender = true) { 
+async function tx(promiseOrFn, success = "Transaction confirmed.", functionName = "Transaction", rerender = true) { 
   if (isTxPending) {
     toast("Another transaction is currently processing. Please finish or cancel it first.", "warning");
     return null;
@@ -752,8 +777,11 @@ async function tx(promise, success = "Transaction confirmed.", functionName = "T
   document.body.classList.add("tx-busy");
   const pendingToast = toast("Waiting for MetaMask signature & blockchain confirmation…", "pending"); 
   try { 
-    const t = await promise; 
+    const t = typeof promiseOrFn === "function" ? await promiseOrFn() : await promiseOrFn; 
     const receipt = await t.wait(); 
+    if (receipt && Number(receipt.status) === 0) {
+      throw new Error("Transaction execution reverted on-chain.");
+    }
     pendingToast?.remove();
     lastTransaction = { 
       hash: receipt.hash, 
@@ -1813,11 +1841,11 @@ function bindEvents() {
     const id = Number(actionTarget.dataset.id); 
 
     if (action === "accept") {
-      return tx(write.acceptCustody(id), "Custody accepted.", "acceptCustody"); 
+      return tx(() => write.acceptCustody(id), "Custody accepted.", "acceptCustody"); 
     }
 
     if (action === "confirm") {
-      return tx(write.confirmReceipt(id), "Receipt confirmation recorded.", "confirmReceipt"); 
+      return tx(() => write.confirmReceipt(id), "Receipt confirmation recorded.", "confirmReceipt"); 
     }
 
     if (action === "dispatch") { 
@@ -1828,7 +1856,7 @@ function bindEvents() {
         iconType: "distributor"
       });
       if (address) {
-        return tx(write.dispatchBatch(id, address), "Batch dispatched to distributor.", "dispatchBatch"); 
+        return tx(() => write.dispatchBatch(id, address), "Batch dispatched to distributor.", "dispatchBatch"); 
       }
       return;
     } 
@@ -1841,7 +1869,7 @@ function bindEvents() {
         iconType: "clinic"
       });
       if (address) {
-        return tx(write.deliverToClinic(id, address), "Clinic delivery destination set; await dual confirmation.", "deliverToClinic"); 
+        return tx(() => write.deliverToClinic(id, address), "Clinic delivery destination set; await dual confirmation.", "deliverToClinic"); 
       }
       return;
     } 
@@ -1850,7 +1878,7 @@ function bindEvents() {
       const patientId = await promptPatientModal({ batchId: id });
       if (!patientId) return;
       const hash = ethers.keccak256(ethers.toUtf8Bytes(patientId)); 
-      return tx(write.administerDose(id, hash), "Dose administered; only the cryptographic hash was recorded.", "administerDose"); 
+      return tx(() => write.administerDose(id, hash), "Dose administered; only the cryptographic hash was recorded.", "administerDose"); 
     } 
   });
 
