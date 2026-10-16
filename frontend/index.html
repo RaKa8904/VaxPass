@@ -1,23 +1,82 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>VaxPass | Cold-chain vaccine passport</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VaxPass | Cold-Chain Vaccine Passport</title>
+  <meta name="description" content="Blockchain-based cold-chain vaccine passport, temperature excursion management, and privacy-preserving administration on Ethereum.">
+  <meta name="theme-color" content="#0c4a6e">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 </head>
 <body>
-  <header class="topbar"><a href="#/" class="brand">✚ <span>Vax</span>Pass</a>
-    <button id="menuButton" class="icon-button" aria-label="Open menu">☰</button>
-    <nav id="nav"><a href="#/">Home</a><a href="#/register">Register role</a><a href="#/manufacturer">Manufacturer</a><a href="#/distributor">Distributor</a><a href="#/clinic">Clinic</a><a href="#/regulator">Regulator</a><a href="#/sensor">Sensor</a><a href="#/verify">Verify</a><a href="#/analytics">Analytics</a></nav>
-    <button id="connectButton" class="wallet">Connect wallet</button>
+  <header class="topbar">
+    <a href="#/" class="brand" aria-label="VaxPass Homepage">
+      <svg class="brand-logo" viewBox="0 0 32 32" width="28" height="28" fill="none" aria-hidden="true">
+        <rect width="32" height="32" rx="8" fill="#0c4a6e"/>
+        <path d="M16 6 C21 6 25 8.5 25 11 C25 20 20 25 16 27 C12 25 7 20 7 11 C7 8.5 11 6 16 6 Z" fill="#0f9b9d" fill-opacity="0.25" stroke="#38bdf8" stroke-width="1.2"/>
+        <path d="M16 11 V21 M11 16 H21" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="16" cy="16" r="1.5" fill="#e7f8f7"/>
+      </svg>
+      <span class="brand-text"><span>Vax</span>Pass</span>
+    </a>
+    
+    <button id="menuButton" class="icon-button" aria-label="Toggle navigation menu">
+      <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+    </button>
+
+    <nav id="nav">
+      <a href="#/">Home</a>
+      <a href="#/register">Register Role</a>
+      <a href="#/manufacturer">Manufacturer</a>
+      <a href="#/distributor">Distributor</a>
+      <a href="#/clinic">Clinic</a>
+      <a href="#/regulator">Regulator</a>
+      <a href="#/sensor">Sensor</a>
+      <a href="#/verify">Verify</a>
+      <a href="#/analytics">Analytics</a>
+    </nav>
+
+    <div class="topbar-actions">
+      <div id="networkChip" class="network-chip" title="Active blockchain network">
+        <span class="network-dot"></span>
+        <span id="networkName">Connecting…</span>
+      </div>
+      <button id="connectButton" class="wallet">
+        <svg class="wallet-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="3"/><path d="M18 12h.01"/><path d="M2 10h20"/></svg>
+        <span>Connect wallet</span>
+      </button>
+    </div>
   </header>
-  <main id="app"><div class="loading">Loading VaxPass…</div></main>
+
+  <main id="app">
+    <div class="skeleton-container" aria-label="Loading VaxPass">
+      <div class="skeleton-hero"></div>
+      <div class="skeleton-grid">
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Custom Popup Modal Container -->
+  <div id="modalContainer" class="modal-backdrop" aria-hidden="true" role="dialog" aria-modal="true"></div>
+
+  <!-- Sliding Transaction Drawer -->
   <aside id="txDrawer" class="tx-drawer" aria-live="polite"></aside>
+
+  <!-- Smart Contract Safety Shield Alert -->
   <div id="shieldArea" aria-live="assertive"></div>
+
+  <!-- Toast Notifications -->
   <div id="toastArea" class="toast-area" aria-live="polite"></div>
+
   <script src="app.js"></script>
 </body>
 </html>
