@@ -64,7 +64,7 @@ Open `http://192.168.0.106:8080` on the computer, open a batch passport, and cli
 ## Verify each project step
 
 1. **Contract:** `npx hardhat compile` should compile `VaxPass.sol`.
-2. **Tests:** `npx hardhat test` runs 12 tests covering roles, custody, readings, spoilage, expiry, recall, privacy hashing, verification, and statistics.
+2. **Tests:** `npx hardhat test` runs 13 tests covering roles, custody, readings, spoilage, expiry, recall, privacy hashing, verification, and statistics.
 3. **Deploy/seed:** after the commands above, `frontend/contract.json` has a non-empty address and the console reports approvals plus VX001/VX002 registration.
 4. **Frontend:** open the site, use **Verify** and enter `VX001`; it works without a wallet. Connect MetaMask for write actions.
 5. **Simulator:** dispatch a batch, then log readings as shown below.
@@ -96,6 +96,55 @@ $env:BATCH_ID="1"; $env:SENSOR_MODE="breach"; npx hardhat run scripts/simulate-s
 ```
 
 `normal` emits 2–8 °C readings; `spike` logs a few 12–15 °C excursions; `breach` logs long 20+ °C excursions that exceed the demo budget and mark the batch `SPOILED`.
+
+## Demo Mode
+
+On the local Hardhat chain (`chainId 31337`), the navbar defaults to **Demo Mode**. It uses unlocked JSON-RPC signers for the seeded Hardhat accounts and never contains private keys in the frontend:
+
+| Demo role | Hardhat account |
+| --- | --- |
+| Regulator | #0 |
+| Manufacturer | #1 |
+| Distributor | #2 |
+| Clinic | #3 |
+| Temperature Logger | #4 |
+
+Use the role dropdown to switch the active signer without MetaMask popups. **Live Wallet (MetaMask)** remains available on the local chain and is forced on non-local chains. Demo Mode, the Sensor Console, Time Machine, checkpoints, and reset controls are local-chain presentation tools only. Sensor readings are simulated and are not trusted production telemetry.
+
+The Demo Guide is available in Demo Mode and tracks its nine checkpoints from on-chain state where possible:
+
+1. Open public Verify for VX001 without a wallet.
+2. View the VX001 Passport.
+3. Send normal temperature readings.
+4. Send spike readings and show expiry impact.
+5. Send breach readings and show `SPOILED` then `INVALID`.
+6. Run the safe VX002 flow: dispatch, accept custody, select clinic, and confirm both sides.
+7. Administer a dose and demonstrate duplicate patient-hash blocking.
+8. Recall a batch as Regulator and show later actions blocked.
+9. Open Analytics and explain the network totals.
+
+## Demo Runbook
+
+For a five-minute presentation, start with public Verify (30 seconds), open the VX001 Passport and explain custody (45 seconds), switch to Logger and run normal/spike/breach readings (90 seconds), switch to the VX002 roles for the safe custody and clinic flow (75 seconds), administer a dose and attempt a duplicate (30 seconds), then recall a batch and finish on Analytics (30 seconds). Use the Time Machine only when you need to make expiry visible quickly; save a checkpoint before the flow and reset afterward.
+
+### Screenshots checklist
+
+Capture these 14 views for the report:
+
+1. Demo Mode navbar with the active Regulator role.
+2. Public Verify page with no wallet connected.
+3. VALID verification result for VX001.
+4. VX001 Passport supply-chain stepper.
+5. Passport QR code and public verification URL.
+6. Logger Sensor Console before readings.
+7. Normal readings showing confirmed feed entries.
+8. Spike readings showing excursion budget and expiry impact.
+9. Breach result showing the prominent `SPOILED` alert.
+10. VX002 Manufacturer action queue and dispatch control.
+11. Distributor custody acceptance and clinic handover queue.
+12. Clinic dose administration and duplicate patient-hash blocked card.
+13. Regulator recall with the contract-enforcement shield card.
+14. Analytics dashboard with labeled outcomes, legend, and live activity.
 
 ## Sepolia deployment
 

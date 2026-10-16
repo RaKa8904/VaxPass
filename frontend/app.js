@@ -82,7 +82,7 @@ async function init() {
   if (mode === "demo") await activateDemoRole(localStorage.getItem("vaxpassDemoRole") || "regulator", false);
   else updateModeControls();
   window.addEventListener("hashchange", render);
-  bindEvents(); startLiveUpdates(); render();
+  bindEvents(); bindPolishEvents(); startLiveUpdates(); render();
 }
 
 function updateModeControls() {
@@ -93,9 +93,13 @@ function updateModeControls() {
     return;
   }
   const roleOptions = DEMO_ROLES.map(key => `<option value="${key}" ${key === activeDemoRole ? "selected" : ""}>${DEMO_ROLE_LABELS[key]} · ${short(demoAddresses[key] || "")}</option>`).join("");
-  controls.innerHTML = `<div class="mode-toggle" role="group" aria-label="Application mode"><button class="mode-option ${mode === "demo" ? "active" : ""}" data-action="demo-mode">Demo Mode</button><button class="mode-option ${mode === "live" ? "active" : ""}" data-action="live-mode">Live Wallet</button></div>${mode === "demo" ? `<span class="mode-pill demo">DEMO MODE · LOCAL CHAIN</span><label class="role-switcher"><span class="sr-only">Active demo role</span><select id="demoRoleSelect" aria-label="Active demo role">${roleOptions}</select></label>` : ""}`;
+  controls.innerHTML = `<div class="mode-toggle" role="group" aria-label="Application mode"><button class="mode-option ${mode === "demo" ? "active" : ""}" data-action="demo-mode">Demo Mode</button><button class="mode-option ${mode === "live" ? "active" : ""}" data-action="live-mode">Live Wallet</button></div>${mode === "demo" ? `<span class="mode-pill demo">DEMO MODE · LOCAL CHAIN</span><label class="role-switcher"><span class="sr-only">Active demo role</span><select id="demoRoleSelect" aria-label="Active demo role">${roleOptions}</select></label>` : ""}<button class="presentation-toggle" data-action="toggle-presentation" aria-label="Toggle Presentation Mode">${localStorage.getItem("vaxpassPresentation") === "true" ? "Exit presentation" : "Presentation"}</button>`;
   $("#connectButton").textContent = mode === "demo" ? `${short(account)} · ${DEMO_ROLE_LABELS[activeDemoRole]}` : (account ? short(account) : "Connect wallet");
+  document.body.classList.toggle("presentation-mode", localStorage.getItem("vaxpassPresentation") === "true");
 }
+function togglePresentation() { const enabled = localStorage.getItem("vaxpassPresentation") !== "true"; localStorage.setItem("vaxpassPresentation", String(enabled)); updateModeControls(); }
+function applyPreset(name) { const preset = { covid: ["DemoVax", 100, 2, 8, 30], cold: ["ColdStorageVax", 50, 2, 8, 20] }[name]; if (!preset) return; $("#vaccineName").value = preset[0]; $("#doses").value = preset[1]; $("#minTemp").value = preset[2]; $("#maxTemp").value = preset[3]; $("#budget").value = preset[4]; const expiry = new Date(Date.now() + 90 * 86400000); expiry.setMinutes(expiry.getMinutes() - expiry.getTimezoneOffset()); $("#printedExpiry").value = expiry.toISOString().slice(0, 16); }
+function bindPolishEvents() { document.addEventListener("click", e => { const action = e.target.dataset.action; if (action === "toggle-presentation") return togglePresentation(); if (action === "verify-chip") { $("#verifyId").value = `VX${String(e.target.dataset.id).padStart(3, "0")}`; return verify(e.target.dataset.id); } }); document.addEventListener("change", e => { if (e.target.id === "batchPreset") applyPreset(e.target.value); }); }
 
 async function activateDemoRole(role, rerender = true) {
   if (!isDemoChain() || !DEMO_ROLES.includes(role)) return;
@@ -209,15 +213,16 @@ async function renderRegulator() {
 }
 async function renderManufacturer() {
   const list = await batches(); const mine = account ? list.filter(b => b.manufacturer.toLowerCase() === account.toLowerCase()) : [];
-  const actions = b => Number(b.status) === 0 && b.custodian.toLowerCase() === account?.toLowerCase() ? `<button class="button teal" data-action="dispatch" data-id="${b.id}">Dispatch</button>` : "";
+  const actions = b => Number(b.status) === 0 && b.custodian.toLowerCase() === account?.toLowerCase() ? `<button class="button teal" data-action="dispatch" data-id="${b.id}">Dispatch</button>` : `<button class="button light" disabled title="Only the current custodian can dispatch a manufactured batch.">Dispatch unavailable</button>`;
   app.innerHTML = page("Manufacturer workspace", "Register a vaccine batch and begin its cold-chain passport.", `<div class="grid two"><div class="card"><h3>Register batch</h3><form id="batchForm"><label>Vaccine name<input id="vaccineName" required placeholder="ExampleVax"></label><label>Lot number<input id="lotNumber" required placeholder="LOT-2026-01"></label><div class="grid two"><label>Total doses<input id="doses" type="number" min="1" value="100" required></label><label>Printed expiry<input id="printedExpiry" type="datetime-local" required></label></div><div class="grid two"><label>Minimum °C<input id="minTemp" type="number" step="0.1" value="2" required></label><label>Maximum °C<input id="maxTemp" type="number" step="0.1" value="8" required></label></div><label>Excursion budget (minutes)<input id="budget" type="number" min="0" value="30" required></label><label>IPFS CID (optional document reference)<input id="cid" placeholder="Qm…"></label><button class="button teal">Register on-chain</button></form></div><div class="card"><h3>Dispatch note</h3><p>Use the dispatch button on a manufactured batch. You will be asked for the approved distributor wallet address.</p><p class="notice">${account ? `Connected as ${short(account)}.` : "Connect the manufacturer wallet to see your batches."}</p></div></div><h2 style="margin-top:28px">My batches</h2><div class="grid three">${mine.length ? mine.map(b => batchCard(b, actions(b))).join("") : `<div class="card empty">No manufacturer batches found.</div>`}</div>`);
+  $("#batchForm")?.insertAdjacentHTML("afterbegin", `<label>Registration preset<select id="batchPreset" aria-label="Registration preset"><option value="">Choose a preset</option><option value="covid">COVID vaccine · 2–8 C · 100 doses · 30 min</option><option value="cold">Cold-storage · 2–8 C · 50 doses · 20 min</option></select></label>`);
   app.insertAdjacentHTML("afterbegin", await roleActionQueue("manufacturer", mine));
 }
 async function renderDistributor() {
   const list = await batches(); const incoming = [], outgoing = [];
   if (account) for (const b of list) { const pending = await read.pendingCustodian(b.id); if (pending.toLowerCase() === account.toLowerCase()) incoming.push(b); if (b.custodian.toLowerCase() === account.toLowerCase()) outgoing.push(b); }
   const incomingActions = b => `<button class="button teal" data-action="accept" data-id="${b.id}">Accept custody</button>`;
-  const outgoingActions = b => Number(b.status) === 1 && !b.clinic.match(/^0x0+$/) ? `<button class="button teal" data-action="confirm" data-id="${b.id}">Confirm handover</button>` : Number(b.status) === 1 ? `<button class="button teal" data-action="deliver" data-id="${b.id}">Deliver to clinic</button>` : "";
+  const outgoingActions = b => Number(b.status) === 1 && !b.clinic.match(/^0x0+$/) ? `<button class="button teal" data-action="confirm" data-id="${b.id}">Confirm handover</button>` : Number(b.status) === 1 ? `<button class="button teal" data-action="deliver" data-id="${b.id}">Deliver to clinic</button>` : `<button class="button light" disabled title="This batch is not awaiting a distributor action.">No action available</button>`;
   app.innerHTML = page("Distributor workspace", "Accept shipments, identify the clinic, and confirm handover.", `<h2>Incoming custody requests</h2><div class="grid three">${incoming.length ? incoming.map(b => batchCard(b, incomingActions(b))).join("") : `<div class="card empty">No incoming requests.</div>`}</div><h2 style="margin-top:28px">My in-transit batches</h2><div class="grid three">${outgoing.length ? outgoing.map(b => batchCard(b, outgoingActions(b))).join("") : `<div class="card empty">No batches in your custody.</div>`}</div>`);
   app.insertAdjacentHTML("afterbegin", await roleActionQueue("distributor", [...incoming.map(b => ({ ...b, pending: true })), ...outgoing]));
 }
@@ -262,6 +267,7 @@ async function renderBatch(id) {
 }
 function renderVerify(initialId) {
   app.innerHTML = page("Public batch verification", "Check a vaccine passport without connecting a wallet.", `<div class="card"><form id="verifyForm"><label>Batch ID (for example 1 or VX001)<input id="verifyId" value="${initialId || ""}" placeholder="VX001" required></label><button class="button teal">Verify batch</button></form></div><div id="verifyResult" style="margin-top:18px"></div>`);
+  $("#verifyForm")?.insertAdjacentHTML("beforebegin", `<div class="try-chips" aria-label="Try a sample batch"><button class="role-chip" data-action="verify-chip" data-id="1">Try VX001</button><button class="role-chip" data-action="verify-chip" data-id="2">Try VX002</button></div>`);
   if (initialId) verify(initialId);
 }
 async function verify(raw) { const id = Number(String(raw).replace(/\D/g, "")); const target = $("#verifyResult"); if (!id) return target.innerHTML = `<div class="notice danger">Enter a valid batch ID.</div>`; const result = await read.verifyBatch(id); const code = Number(result.code), label = ["VALID", "WARNING", "INVALID"][code]; target.innerHTML = `<div class="verify-banner verify-${["valid","warning","invalid"][code]}"><h2>${label}</h2><p>${escapeHtml(result.message)}</p>${code !== 2 ? `<a class="button light" href="#/batch/${id}">Open full passport</a>` : ""}</div>`; }
