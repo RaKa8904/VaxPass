@@ -2,22 +2,10 @@
 const $ = (s) => document.querySelector(s);
 const app = $("#app");
 const STATUS = ["MANUFACTURED", "IN TRANSIT", "DELIVERED", "IN USE", "DEPLETED", "SPOILED", "RECALLED", "EXPIRED"];
-const ROLE_LABELS = { manufacturer: "Manufacturer", distributor: "Distributor", clinic: "Clinic", logger: "Temperature Logger" };
-const DEMO_ROLES = ["regulator", "manufacturer", "distributor", "clinic", "logger"];
-const DEMO_ROLE_LABELS = { regulator: "Regulator", manufacturer: "Manufacturer", distributor: "Distributor", clinic: "Clinic", logger: "Temperature Logger" };
+const ROLE_LABELS = { regulator: "Regulator", manufacturer: "Manufacturer", distributor: "Distributor", clinic: "Clinic", logger: "Temperature Logger" };
+const ROLE_LANDING_ORDER = ["regulator", "manufacturer", "distributor", "clinic", "logger"];
 const SENSOR_READINGS = { normal: [[25, 5], [45, 5], [70, 5]], spike: [[120, 3], [150, 3], [65, 5]], breach: [[220, 20], [250, 20]] };
-const GUIDE_STEPS = [
-  ["Open Verify", "Public verification needs no wallet.", "#/verify/1", "regulator"],
-  ["View Passport", "Read the custody and temperature record.", "#/batch/1", "regulator"],
-  ["Normal readings", "In-range readings preserve the cold chain.", "#/sensor/1", "logger"],
-  ["Spike readings", "Short excursions reduce effective expiry.", "#/sensor/1", "logger"],
-  ["Breach -> SPOILED -> INVALID", "The contract blocks unsafe batches.", "#/sensor/1", "logger"],
-  ["Safe flow on VX002", "Show dispatch, custody, clinic selection, and dual confirmation.", "#/batch/2", "manufacturer"],
-  ["Administer dose", "Patient identifiers are hashed and duplicates are blocked.", "#/clinic", "clinic"],
-  ["Regulator recall", "A recall permanently blocks later batch use.", "#/regulator", "regulator"],
-  ["Analytics", "Summarize batches, doses, and safety outcomes.", "#/analytics", "regulator"]
-];
-let config, read, walletProvider, write, account, activeRoles = [], roleIds = {}, mode = "live", activeDemoRole = "regulator", rpcProvider, demoSigners = {}, demoAddresses = {};
+let config, read, walletProvider, write, account, activeRoles = [], roleIds = {}, rpcProvider;
 let sensorFeed = [], selectedSensorBatch = 1, lastTransaction = null, livePoller = null, activity = [], checkpointId = null;
 
 function short(a = "") { return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "—"; }
@@ -31,7 +19,6 @@ function verificationUrl(id) {
   return `${base}/#/verify/${id}`;
 }
 function isLocalFrontend() { return ["localhost", "127.0.0.1"].includes(location.hostname); }
-function isDemoChain() { return Number(config?.chainId) === 31337; }
 function toast(message, error = false) { const el = document.createElement("div"); el.className = `toast${error ? " error" : ""}`; el.textContent = message; $("#toastArea").append(el); setTimeout(() => el.remove(), 4200); }
 function friendly(error) {
   const m = error?.shortMessage || error?.reason || error?.message || "Transaction failed";
@@ -78,47 +65,23 @@ async function init() {
   };
   $("#connectButton").addEventListener("click", connect);
   $("#menuButton").addEventListener("click", () => $("#nav").classList.toggle("open"));
-  mode = isDemoChain() ? (localStorage.getItem("vaxpassMode") || "demo") : "live";
-  if (mode === "demo") await activateDemoRole(localStorage.getItem("vaxpassDemoRole") || "regulator", false);
-  else updateModeControls();
+  updateModeControls();
   window.addEventListener("hashchange", render);
+  if (window.ethereum) { window.ethereum.on("accountsChanged", handleAccountChanged); window.ethereum.on("chainChanged", () => window.location.reload()); if ((await window.ethereum.request({ method: "eth_accounts" })).length) await connect(false); }
   bindEvents(); bindPolishEvents(); startLiveUpdates(); render();
 }
 
 function updateModeControls() {
-  const controls = $("#modeControls");
-  if (!controls) return;
-  if (!isDemoChain()) {
-    controls.innerHTML = `<span class="mode-pill live">LIVE WALLET</span>`;
-    return;
-  }
-  const roleOptions = DEMO_ROLES.map(key => `<option value="${key}" ${key === activeDemoRole ? "selected" : ""}>${DEMO_ROLE_LABELS[key]} · ${short(demoAddresses[key] || "")}</option>`).join("");
-  controls.innerHTML = `<div class="mode-toggle" role="group" aria-label="Application mode"><button class="mode-option ${mode === "demo" ? "active" : ""}" data-action="demo-mode">Demo Mode</button><button class="mode-option ${mode === "live" ? "active" : ""}" data-action="live-mode">Live Wallet</button></div>${mode === "demo" ? `<span class="mode-pill demo">DEMO MODE · LOCAL CHAIN</span><label class="role-switcher"><span class="sr-only">Active demo role</span><select id="demoRoleSelect" aria-label="Active demo role">${roleOptions}</select></label>` : ""}<button class="presentation-toggle" data-action="toggle-presentation" aria-label="Toggle Presentation Mode">${localStorage.getItem("vaxpassPresentation") === "true" ? "Exit presentation" : "Presentation"}</button>`;
-  $("#connectButton").textContent = mode === "demo" ? `${short(account)} · ${DEMO_ROLE_LABELS[activeDemoRole]}` : (account ? short(account) : "Connect wallet");
-  document.body.classList.toggle("presentation-mode", localStorage.getItem("vaxpassPresentation") === "true");
+  $("#connectButton").textContent = account ? short(account) : "Connect wallet";
 }
-function togglePresentation() { const enabled = localStorage.getItem("vaxpassPresentation") !== "true"; localStorage.setItem("vaxpassPresentation", String(enabled)); updateModeControls(); }
 function applyPreset(name) { const preset = { covid: ["DemoVax", 100, 2, 8, 30], cold: ["ColdStorageVax", 50, 2, 8, 20] }[name]; if (!preset) return; $("#vaccineName").value = preset[0]; $("#doses").value = preset[1]; $("#minTemp").value = preset[2]; $("#maxTemp").value = preset[3]; $("#budget").value = preset[4]; const expiry = new Date(Date.now() + 90 * 86400000); expiry.setMinutes(expiry.getMinutes() - expiry.getTimezoneOffset()); $("#printedExpiry").value = expiry.toISOString().slice(0, 16); }
-function bindPolishEvents() { document.addEventListener("click", e => { const action = e.target.dataset.action; if (action === "toggle-presentation") return togglePresentation(); if (action === "verify-chip") { $("#verifyId").value = `VX${String(e.target.dataset.id).padStart(3, "0")}`; return verify(e.target.dataset.id); } }); document.addEventListener("change", e => { if (e.target.id === "batchPreset") applyPreset(e.target.value); }); }
+function bindPolishEvents() { document.addEventListener("click", e => { const action = e.target.dataset.action; if (action === "verify-chip") { $("#verifyId").value = `VX${String(e.target.dataset.id).padStart(3, "0")}`; return verify(e.target.dataset.id); } }); document.addEventListener("change", e => { if (e.target.id === "batchPreset") applyPreset(e.target.value); }); }
 
-async function activateDemoRole(role, rerender = true) {
-  if (!isDemoChain() || !DEMO_ROLES.includes(role)) return;
-  mode = "demo"; activeDemoRole = role; localStorage.setItem("vaxpassMode", "demo"); localStorage.setItem("vaxpassDemoRole", role);
-  if (!Object.keys(demoSigners).length) for (const key of DEMO_ROLES) { demoSigners[key] = await rpcProvider.getSigner(DEMO_ROLES.indexOf(key)); demoAddresses[key] = await demoSigners[key].getAddress(); }
-  const signer = demoSigners[role]; account = await signer.getAddress(); write = read.connect(signer); activeRoles = [role]; updateModeControls();
-  if (rerender) await render();
-}
-
-async function activateLiveMode() {
-  mode = "live"; localStorage.setItem("vaxpassMode", "live"); write = null; account = null; activeRoles = []; updateModeControls();
-  if (window.ethereum) await connect(); else toast("Live Wallet mode needs MetaMask.", true);
-}
-
-async function connect() {
+async function connect(request = true) {
   if (!window.ethereum) return toast("MetaMask was not detected. Install its browser extension first.", true);
   try {
-    mode = "live"; localStorage.setItem("vaxpassMode", "live"); walletProvider = new ethers.BrowserProvider(window.ethereum);
-    await walletProvider.send("eth_requestAccounts", []);
+    walletProvider = new ethers.BrowserProvider(window.ethereum);
+    if (request) await walletProvider.send("eth_requestAccounts", []);
     const network = await walletProvider.getNetwork();
     if (Number(network.chainId) !== Number(config.chainId)) {
       toast(`Wrong network: switch MetaMask to chain ID ${config.chainId}.`, true); return;
@@ -130,7 +93,8 @@ async function connect() {
     toast("Wallet connected."); render();
   } catch (e) { toast(friendly(e), true); }
 }
-async function tx(promise, success = "Transaction confirmed.", functionName = "Transaction", rerender = true) { try { toast("Pending: waiting for confirmation…"); const t = await promise; const receipt = await t.wait(); lastTransaction = { hash: receipt.hash, block: receipt.blockNumber, gas: receipt.gasUsed?.toString() || "—", functionName, from: account, role: DEMO_ROLE_LABELS[activeDemoRole] || ROLE_LABELS[activeRoles[0]] || "Wallet" }; updateTxDrawer(); toast(`${success} ${short(receipt.hash)} · block ${receipt.blockNumber}`); if (rerender) await render(); return receipt; } catch (e) { showShield(e); return null; } }
+async function handleAccountChanged(accounts) { if (!accounts.length) { account = null; write = null; activeRoles = []; updateModeControls(); location.hash = "#/"; return render(); } await connect(false); const nextRole = ROLE_LANDING_ORDER.find(role => activeRoles.includes(role)); if (nextRole) location.hash = `#/${nextRole === "logger" ? "sensor" : nextRole}`; }
+async function tx(promise, success = "Transaction confirmed.", functionName = "Transaction", rerender = true) { try { toast("Pending: waiting for confirmation…"); const t = await promise; const receipt = await t.wait(); lastTransaction = { hash: receipt.hash, block: receipt.blockNumber, gas: receipt.gasUsed?.toString() || "—", functionName, from: account, role: ROLE_LABELS[activeRoles[0]] || "Wallet" }; updateTxDrawer(); toast(`${success} ${short(receipt.hash)} · block ${receipt.blockNumber}`); if (rerender) await render(); return receipt; } catch (e) { showShield(e); return null; } }
 async function batches() {
   const stats = await read.getStats();
   const count = Number(stats.totalBatches);
@@ -149,13 +113,15 @@ async function render() {
   try {
     const parts = location.hash.replace(/^#\/?/, "").split("/"); const route = parts[0] || "";
     $("#nav").classList.remove("open");
+    const requiredRole = { regulator: "regulator", manufacturer: "manufacturer", distributor: "distributor", clinic: "clinic", sensor: "logger" }[route];
+    if (requiredRole && !activeRoles.includes(requiredRole)) return renderAccessDenied(requiredRole);
     if (route === "register") await renderRegister(); else if (route === "regulator") await renderRegulator();
     else if (route === "manufacturer") await renderManufacturer(); else if (route === "distributor") await renderDistributor();
     else if (route === "clinic") await renderClinic(); else if (route === "sensor") await renderSensorConsole(Number(parts[1])); else if (route === "batch") await renderBatch(Number(parts[1]));
     else if (route === "verify") await renderVerify(Number(parts[1])); else if (route === "analytics") await renderAnalytics(); else await renderHome();
-    await renderGuide();
   } catch (e) { app.innerHTML = `<div class="notice danger">Unable to read the chain: ${escapeHtml(friendly(e))}</div>`; }
 }
+function renderAccessDenied(role) { const label = ROLE_LABELS[role] || "required"; app.innerHTML = page("Access restricted", `This workspace requires the approved ${label} role.`, `<div class="notice danger"><b>RBAC enforcement</b><p>Connected account: ${short(account)}. Switch MetaMask to an approved ${label} account to continue.</p></div><div class="actions"><button class="button teal" data-action="connect">Recheck MetaMask account</button><a class="button light" href="#/">Return home</a></div>`); }
 
 async function guideChecks() {
   const list = await batches(), stats = await read.getStats(); const first = list.find(b => Number(b.id) === 1), second = list.find(b => Number(b.id) === 2); let firstLogs = [];
@@ -176,7 +142,7 @@ async function renderHome() {
   const list = await batches(); const recent = list.slice(-3).reverse();
   app.innerHTML = `<section class="hero"><div class="eyebrow">Cold chain, clearly proven</div><h1>A passport for every vaccine batch.</h1><p>VaxPass records custody, temperature excursions, expiry penalties, recalls and privacy-preserving dose administration on Ethereum.</p><a class="button" href="#/verify">Verify a batch</a><button class="button light" data-action="connect">Connect wallet</button></section>
   <section class="grid three" style="margin:24px 0"><a class="card quick" href="#/manufacturer"><b>Register a batch</b><span>→</span></a><a class="card quick" href="#/distributor"><b>Track custody</b><span>→</span></a><a class="card quick" href="#/clinic"><b>Administer safely</b><span>→</span></a></section>
-  ${page("Recent batches", "Live data from the configured Ethereum network.", `<div class="grid three">${recent.length ? recent.map(b => batchCard(b)).join("") : `<div class="card empty">No batches yet.</div>`}</div>`)}${activityTicker()}${await renderDemoTools()}`;
+  ${page("Recent batches", "Live data from the configured Ethereum network.", `<div class="grid three">${recent.length ? recent.map(b => batchCard(b)).join("") : `<div class="card empty">No batches yet.</div>`}</div>`)}${activityTicker()}`;
 }
 async function renderDemoTools() {
   if (mode !== "demo" || !isDemoChain()) return "";
@@ -201,7 +167,6 @@ async function roleActionQueue(role, list = []) {
   if (role === "manufacturer") items = list.filter(b => Number(b.status) === 0).map(b => roleQueueCard(`${vx(b.id)} ready to dispatch`, "Manufacturer action required", `#/batch/${b.id}`));
   if (role === "distributor") items = list.filter(b => b.pending || (Number(b.status) === 1 && b.custodian.toLowerCase() === account?.toLowerCase())).map(b => roleQueueCard(`${vx(b.id)} custody or handover`, "Distributor action required", `#/distributor`));
   if (role === "clinic") items = list.filter(b => Number(b.status) === 1 && b.clinic.toLowerCase() === account?.toLowerCase()).map(b => roleQueueCard(`${vx(b.id)} awaiting receipt`, "Clinic confirmation required", `#/clinic`));
-  if (role === "regulator" && mode === "demo") for (const key of DEMO_ROLES.slice(1)) if (demoAddresses[key] && (await read.requestedRole(demoAddresses[key])) !== ethers.ZeroHash && !(await read.hasRole(roleIds[key], demoAddresses[key]))) items.push(roleQueueCard(`${DEMO_ROLE_LABELS[key]} approval`, `${short(demoAddresses[key])} requested access`, `#/regulator`));
   return `<section class="card role-queue"><div class="section-heading"><div><span class="eyebrow dark">Role inbox</span><h2>Needs your action</h2></div><span class="role-chip">${items.length} pending</span></div>${items.length ? items.join("") : `<p class="empty">Nothing pending</p>`}</section>`;
 }
 function renderRegister() {
@@ -233,7 +198,7 @@ async function renderClinic() {
   app.insertAdjacentHTML("afterbegin", await roleActionQueue("clinic", relevant));
 }
 async function renderSensorConsole(id = selectedSensorBatch) {
-  if ((mode === "demo" && activeDemoRole !== "logger") || (mode === "live" && !activeRoles.includes("logger"))) return app.innerHTML = page("Sensor console", "Switch to an approved Temperature Logger account to record simulated readings.", `<div class="card empty"><a class="button teal" href="#/batch/${id || 1}">Open passport</a></div>`);
+  if (!activeRoles.includes("logger")) return app.innerHTML = page("Sensor console", "Switch to an approved Temperature Logger account to record simulated readings.", `<div class="card empty"><a class="button teal" href="#/batch/${id || 1}">Open passport</a></div>`);
   const list = await batches(); if (!list.length) return app.innerHTML = page("Sensor console", "No batches are available for temperature logging.", `<div class="card empty">Register and seed a batch first.</div>`);
   selectedSensorBatch = id || selectedSensorBatch || Number(list[0].id); const batch = list.find(item => Number(item.id) === selectedSensorBatch) || list[0]; selectedSensorBatch = Number(batch.id);
   const used = Number(batch.excursionMinsUsed), budget = Number(batch.excursionBudgetMins), pct = budget ? Math.min(100, Math.round(used * 100 / budget)) : 0;
@@ -241,7 +206,7 @@ async function renderSensorConsole(id = selectedSensorBatch) {
 }
 async function sendSensorReadings(id, readings) {
   if (!requireWallet()) return;
-  if (mode === "demo" && activeDemoRole !== "logger") return toast("Switch to the Temperature Logger role first.", true);
+  if (!activeRoles.includes("logger")) return toast("Switch to the Temperature Logger account first.", true);
   sensorFeed = [];
   for (const [tempX10, durationMins] of readings) {
     sensorFeed.push({ temp: (tempX10 / 10).toFixed(1), duration: durationMins, state: "pending" }); await renderSensorConsole(id);
@@ -256,7 +221,7 @@ async function renderBatch(id) {
     const stepperHtml = stepper(b);
   const qrUrl = verificationUrl(id);
   const qrSetup = isLocalFrontend() ? `<div class="qr-setup"><p class="muted">This page is using <b>localhost</b>. A phone cannot reach that address.</p><button class="button light" data-action="set-qr-url">Set phone-accessible URL</button></div>` : "";
-  const sensorLink = mode === "demo" || activeRoles.includes("logger") ? `<a class="button light" href="#/sensor/${id}">Open Sensor Console</a>` : "";
+  const sensorLink = activeRoles.includes("logger") ? `<a class="button light" href="#/sensor/${id}">Open Sensor Console</a>` : "";
   app.innerHTML = page(`${vx(b.id)} passport`, "An on-chain, temperature-aware batch record.", `<div class="grid two"><section class="card"><div class="row-head"><h2>${escapeHtml(b.vaccineName)}</h2>${badge(b)}</div><div class="detail-list"><div><span>Lot number</span>${escapeHtml(b.lotNumber)}</div><div><span>Current status</span>${STATUS[Number(b.status)]}</div><div><span>Manufacturer</span><span class="address">${b.manufacturer}</span></div><div><span>Custodian</span><span class="address">${b.custodian}</span></div><div><span>Printed expiry</span>${date(b.printedExpiry)}</div><div><span>Effective expiry</span>${date(b.effectiveExpiry)}</div><div><span>Temperature range</span>${temp(b.minTempX10)} to ${temp(b.maxTempX10)}</div><div><span>Doses remaining</span>${b.dosesRemaining} / ${b.totalDoses}</div></div><p><b>Excursion budget:</b> ${used} / ${budget} minutes</p><div class="progress"><i style="width:${pct}%"></i></div><div class="actions">${expiryAction(b)}${sensorLink}</div></section><section class="card"><h3>Temperature record</h3><canvas id="tempChart" class="chart" width="520" height="220"></canvas><p class="muted">${logs.length} reading(s); each point is in °C.</p><div class="qr-heading"><h3>Public verification QR</h3><span class="role-chip">Wallet not required</span></div><div id="qr" class="qr" aria-label="QR code for public batch verification"></div><p class="qr-url">${escapeHtml(qrUrl)}</p>${qrSetup}<p class="muted qr-help">This QR opens public verification. It does not need MetaMask.</p></section></div><div class="grid two" style="margin-top:18px"><section class="card"><h3>Custody & status timeline</h3><div class="timeline">${history.map(h => `<div class="timeline-item"><b>${STATUS[Number(h.status)]}</b><p>${escapeHtml(h.note)}</p><small>${date(h.timestamp)} · ${short(h.actor)}</small></div>`).join("") || "No history"}</div></section><section class="card"><h3>Temperature logs</h3><div class="table-wrap"><table><thead><tr><th>Time</th><th>Temperature</th><th>Duration</th><th>Result</th></tr></thead><tbody>${logs.map(l => `<tr><td>${date(l.timestamp)}</td><td>${temp(l.tempX10)}</td><td>${l.durationMins} min</td><td>${l.excursion ? "Excursion" : "In range"}</td></tr>`).join("") || `<tr><td colspan="4">No readings logged.</td></tr>`}</tbody></table></div></section></div>`);
   const passportCard = app.querySelector(".grid.two .card"), detailList = passportCard?.querySelector(".detail-list"), progress = passportCard?.querySelector(".progress");
   passportCard?.querySelector(".row-head")?.insertAdjacentHTML("afterend", stepperHtml);

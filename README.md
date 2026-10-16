@@ -97,11 +97,11 @@ $env:BATCH_ID="1"; $env:SENSOR_MODE="breach"; npx hardhat run scripts/simulate-s
 
 `normal` emits 2–8 °C readings; `spike` logs a few 12–15 °C excursions; `breach` logs long 20+ °C excursions that exceed the demo budget and mark the batch `SPOILED`.
 
-## Demo Mode
+## Live Wallet and RBAC
 
-On the local Hardhat chain (`chainId 31337`), the navbar defaults to **Demo Mode**. It uses unlocked JSON-RPC signers for the seeded Hardhat accounts and never contains private keys in the frontend:
+The frontend uses MetaMask for all write actions. The local Hardhat accounts are useful development wallets, but their private keys never enter the frontend:
 
-| Demo role | Hardhat account |
+| Account | Seeded role |
 | --- | --- |
 | Regulator | #0 |
 | Manufacturer | #1 |
@@ -109,34 +109,22 @@ On the local Hardhat chain (`chainId 31337`), the navbar defaults to **Demo Mode
 | Clinic | #3 |
 | Temperature Logger | #4 |
 
-Use the role dropdown to switch the active signer without MetaMask popups. **Live Wallet (MetaMask)** remains available on the local chain and is forced on non-local chains. Demo Mode, the Sensor Console, Time Machine, checkpoints, and reset controls are local-chain presentation tools only. Sensor readings are simulated and are not trusted production telemetry.
-
-The Demo Guide is available in Demo Mode and tracks its nine checkpoints from on-chain state where possible:
-
-1. Open public Verify for VX001 without a wallet.
-2. View the VX001 Passport.
-3. Send normal temperature readings.
-4. Send spike readings and show expiry impact.
-5. Send breach readings and show `SPOILED` then `INVALID`.
-6. Run the safe VX002 flow: dispatch, accept custody, select clinic, and confirm both sides.
-7. Administer a dose and demonstrate duplicate patient-hash blocking.
-8. Recall a batch as Regulator and show later actions blocked.
-9. Open Analytics and explain the network totals.
+Connect the appropriate MetaMask account to access its workspace. The app listens for MetaMask account changes and immediately refreshes the signer, on-chain roles, visible workspace, and account-specific batch data. Public Verify, Passport, and Analytics remain available without a wallet; write workspaces enforce the corresponding on-chain role in the UI and contract.
 
 ## Demo Runbook
 
-For a five-minute presentation, start with public Verify (30 seconds), open the VX001 Passport and explain custody (45 seconds), switch to Logger and run normal/spike/breach readings (90 seconds), switch to the VX002 roles for the safe custody and clinic flow (75 seconds), administer a dose and attempt a duplicate (30 seconds), then recall a batch and finish on Analytics (30 seconds). Use the Time Machine only when you need to make expiry visible quickly; save a checkpoint before the flow and reset afterward.
+For a five-minute presentation, start with public Verify (30 seconds), open the VX001 Passport and explain custody (45 seconds), connect the Logger MetaMask account and run normal/spike/breach readings (90 seconds), switch MetaMask accounts for the VX002 custody and clinic flow (75 seconds), administer a dose and attempt a duplicate (30 seconds), then recall a batch and finish on Analytics (30 seconds). Sensor data is simulated; the signer and access control remain MetaMask/on-chain.
 
 ### Screenshots checklist
 
 Capture these 14 views for the report:
 
-1. Demo Mode navbar with the active Regulator role.
+1. MetaMask-connected navbar with the active account and role.
 2. Public Verify page with no wallet connected.
 3. VALID verification result for VX001.
 4. VX001 Passport supply-chain stepper.
 5. Passport QR code and public verification URL.
-6. Logger Sensor Console before readings.
+6. Logger MetaMask account on the Sensor Console before readings.
 7. Normal readings showing confirmed feed entries.
 8. Spike readings showing excursion budget and expiry impact.
 9. Breach result showing the prominent `SPOILED` alert.
