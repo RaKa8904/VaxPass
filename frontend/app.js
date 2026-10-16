@@ -731,9 +731,29 @@ async function connect(request = true) {
       toast(`Wrong network: switch MetaMask to chain ID ${config.chainId}.`, true); 
       return;
     }
-    const signer = await walletProvider.getSigner(); 
-    account = await signer.getAddress(); 
-    write = read.connect(signer);
+    const baseWrite = read.connect(signer);
+    write = new Proxy(baseWrite, {
+      get(target, prop, receiver) {
+        const orig = Reflect.get(target, prop, receiver);
+        if (typeof orig === "function" && typeof prop === "string" && !prop.startsWith("_")) {
+          return async function (...args) {
+            const lastArg = args[args.length - 1];
+            const hasOverrides = lastArg && typeof lastArg === "object" && ("gasLimit" in lastArg || "value" in lastArg);
+            if (!hasOverrides && target[prop]?.estimateGas) {
+              try {
+                const est = await target[prop].estimateGas(...args);
+                const gasLimit = (est * 140n) / 100n;
+                return orig.apply(target, [...args, { gasLimit }]);
+              } catch (err) {
+                // If estimateGas fails, proceed with original call so contract revert error displays
+              }
+            }
+            return orig.apply(target, args);
+          };
+        }
+        return orig;
+      }
+    });
     activeRoles = [];
     for (const [key, id] of Object.entries(roleIds)) {
       if (await read.hasRole(id, account)) activeRoles.push(key);
