@@ -10,6 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.hugeicons.com/font/hgi-stroke-rounded.css">
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
@@ -27,19 +28,19 @@
     </a>
     
     <button id="menuButton" class="icon-button" aria-label="Toggle navigation menu">
-      <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+      <i class="hgi-stroke hgi-menu-01" aria-hidden="true"></i>
     </button>
 
     <nav id="nav">
-      <a href="#/">Home</a>
-      <a href="#/register">Register Role</a>
-      <a href="#/manufacturer">Manufacturer</a>
-      <a href="#/distributor">Distributor</a>
-      <a href="#/clinic">Clinic</a>
-      <a href="#/regulator">Regulator</a>
-      <a href="#/sensor">Sensor</a>
-      <a href="#/verify">Verify</a>
-      <a href="#/analytics">Analytics</a>
+      <a href="#/"><i class="hgi-stroke hgi-home-01" aria-hidden="true"></i><span>Home</span></a>
+      <a href="#/register"><i class="hgi-stroke hgi-user-add-01" aria-hidden="true"></i><span>Register</span></a>
+      <a href="#/manufacturer"><i class="hgi-stroke hgi-factory" aria-hidden="true"></i><span>Manufacturer</span></a>
+      <a href="#/distributor"><i class="hgi-stroke hgi-truck-delivery" aria-hidden="true"></i><span>Distributor</span></a>
+      <a href="#/clinic"><i class="hgi-stroke hgi-hospital-01" aria-hidden="true"></i><span>Clinic</span></a>
+      <a href="#/regulator"><i class="hgi-stroke hgi-shield-user" aria-hidden="true"></i><span>Regulator</span></a>
+      <a href="#/sensor"><i class="hgi-stroke hgi-thermometer-cold" aria-hidden="true"></i><span>Sensor</span></a>
+      <a href="#/verify"><i class="hgi-stroke hgi-qr-code" aria-hidden="true"></i><span>Verify</span></a>
+      <a href="#/analytics"><i class="hgi-stroke hgi-analytics-01" aria-hidden="true"></i><span>Analytics</span></a>
     </nav>
 
     <div class="topbar-actions">
@@ -48,7 +49,7 @@
         <span id="networkName">Connecting…</span>
       </div>
       <button id="connectButton" class="wallet">
-        <svg class="wallet-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="3"/><path d="M18 12h.01"/><path d="M2 10h20"/></svg>
+        <i class="hgi-stroke hgi-wallet-01" aria-hidden="true"></i>
         <span>Connect wallet</span>
       </button>
     </div>

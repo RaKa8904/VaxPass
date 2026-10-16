@@ -1,6 +1,8 @@
 /* ==========================================================================
    VaxPass Front-End Architecture
    Decentralized Cold-Chain Vaccine Passport
+   Icons: Hugeicons (Strictly No Emojis)
+   Components: Shadcn Architecture & Framed QR System
    ========================================================================== */
 
 const $ = (s) => document.querySelector(s);
@@ -23,7 +25,7 @@ const SENSOR_READINGS = {
 
 let config, read, walletProvider, write, account, activeRoles = [], roleIds = {}, rpcProvider;
 let sensorFeed = [], selectedSensorBatch = 1, lastTransaction = null, livePoller = null, activity = [], checkpointId = null;
-let mode = "live", activeDemoRole = "manufacturer";
+let mode = "live", activeDemoRole = "manufacturer", distributorTab = "incoming";
 
 /* ==========================================================================
    Utilities & Formatters
@@ -55,7 +57,7 @@ function copyableAddress(a = "") {
   if (!a || a.match(/^0x0+$/)) return "—";
   return `<button type="button" class="address-chip" data-action="copy-address" data-address="${escapeHtml(a)}" title="Click to copy full address: ${escapeHtml(a)}">
     <span>${short(a)}</span>
-    <svg class="copy-icon" viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+    <i class="hgi-stroke hgi-copy-01" aria-hidden="true"></i>
   </button>`;
 }
 
@@ -72,7 +74,10 @@ function isLocalFrontend() {
 function toast(message, error = false) { 
   const el = document.createElement("div"); 
   el.className = `toast${error ? " error" : ""}`; 
-  el.textContent = message; 
+  el.innerHTML = `
+    <i class="hgi-stroke ${error ? 'hgi-alert-circle' : 'hgi-checkmark-circle-02'}"></i>
+    <span>${escapeHtml(message)}</span>
+  `; 
   $("#toastArea").append(el); 
   setTimeout(() => el.remove(), 4200); 
 }
@@ -110,13 +115,15 @@ function showShield(error) {
   if (!card) return toast("Transaction cancelled in MetaMask.", false); 
   $("#shieldArea").innerHTML = `
     <div class="shield-card">
-      <div class="shield-icon">!</div>
+      <div class="shield-icon"><i class="hgi-stroke hgi-alert-triangle"></i></div>
       <div>
         <b>${card.title}</b>
         <p>${escapeHtml(card.message)}</p>
         <small>${escapeHtml(card.technical)}</small>
       </div>
-      <button class="icon-button" data-action="dismiss-shield" aria-label="Dismiss contract error">×</button>
+      <button class="icon-button" data-action="dismiss-shield" aria-label="Dismiss contract error">
+        <i class="hgi-stroke hgi-cancel-01"></i>
+      </button>
     </div>
   `; 
   setTimeout(() => { if ($("#shieldArea")) $("#shieldArea").innerHTML = ""; }, 9000); 
@@ -128,7 +135,9 @@ function updateTxDrawer() {
   drawer.innerHTML = `
     <div class="tx-drawer-head">
       <b>Last transaction</b>
-      <button class="icon-button" data-action="dismiss-tx" aria-label="Close transaction drawer">×</button>
+      <button class="icon-button" data-action="dismiss-tx" aria-label="Close transaction drawer">
+        <i class="hgi-stroke hgi-cancel-01"></i>
+      </button>
     </div>
     <p><b>${escapeHtml(lastTransaction.functionName)}</b> · ${escapeHtml(lastTransaction.role)}</p>
     <small>From ${short(lastTransaction.from)}</small>
@@ -155,13 +164,15 @@ function statusLabel(batch) {
 }
 
 function badge(batch) { 
-  return `<span class="badge ${statusClass(batch)}">${statusLabel(batch)}</span>`; 
+  const cls = statusClass(batch);
+  const iconName = cls === "safe" ? "hgi-checkmark-circle-02" : cls === "warning" ? "hgi-clock-01" : cls === "risk" ? "hgi-alert-triangle" : "hgi-cancel-circle";
+  return `<span class="badge ${cls}"><i class="hgi-stroke ${iconName}"></i> ${statusLabel(batch)}</span>`; 
 }
 
 function expiryAction(batch) { 
   const active = ![4, 5, 6, 7].includes(Number(batch.status)); 
   return active && Number(batch.effectiveExpiry) <= Math.floor(Date.now() / 1000) 
-    ? `<button class="button danger" data-action="mark-expired" data-id="${batch.id}">Mark expired</button>` 
+    ? `<button class="button danger" data-action="mark-expired" data-id="${batch.id}"><i class="hgi-stroke hgi-clock-01"></i> Mark expired</button>` 
     : ""; 
 }
 
@@ -183,7 +194,7 @@ function stepper(batch) {
     <div class="supply-stepper">
       ${steps.map((step, index) => `
         <div class="supply-step ${step[1] ? "complete" : ""} ${index === 0 && status === 0 || index === 1 && status === 1 || index === 2 && status === 2 || index === 3 && [3, 4].includes(status) ? "current" : ""}">
-          <span>${step[1] ? "✓" : index + 1}</span>
+          <span>${step[1] ? '<i class="hgi-stroke hgi-checkmark-circle-02"></i>' : index + 1}</span>
           <b>${step[0]}</b>
         </div>
         ${index < steps.length - 1 ? `<i class="step-line ${step[1] && steps[index + 1][1] ? "complete" : ""}"></i>` : ""}
@@ -196,11 +207,7 @@ function emptyState(title, subtitle, actionHtml = "") {
   return `
     <div class="empty-state">
       <div class="empty-state-icon">
-        <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
-          <path d="m3.3 7 8.7 5 8.7-5"/>
-          <path d="M12 22V12"/>
-        </svg>
+        <i class="hgi-stroke hgi-package"></i>
       </div>
       <h3>${escapeHtml(title)}</h3>
       <p>${escapeHtml(subtitle)}</p>
@@ -218,7 +225,7 @@ function requireWallet() {
 }
 
 /* ==========================================================================
-   Custom Popup Modal System (Replaces browser window.prompt / confirm)
+   Custom Shadcn Modal Popup System
    ========================================================================== */
 
 function closeModal() {
@@ -244,7 +251,9 @@ function promptModal({ title, subtitle, iconHtml, bodyHtml, confirmText = "Confi
             <h2>${escapeHtml(title)}</h2>
             <p>${escapeHtml(subtitle)}</p>
           </div>
-          <button type="button" class="modal-close-btn" data-modal-action="cancel" aria-label="Close modal">×</button>
+          <button type="button" class="modal-close-btn" data-modal-action="cancel" aria-label="Close modal">
+            <i class="hgi-stroke hgi-cancel-01"></i>
+          </button>
         </div>
         <form id="customModalForm">
           <div class="modal-body">
@@ -301,22 +310,29 @@ function promptModal({ title, subtitle, iconHtml, bodyHtml, confirmText = "Confi
 
 function promptAddressModal({ title, subtitle, roleLabel, iconType = "distributor" }) {
   const iconSvg = iconType === "distributor"
-    ? `<svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`
-    : `<svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2z"/><path d="M9 10h6"/><path d="M12 7v6"/></svg>`;
+    ? `<i class="hgi-stroke hgi-truck-delivery"></i>`
+    : `<i class="hgi-stroke hgi-hospital-01"></i>`;
 
   const bodyHtml = `
     <label for="modalAddressInput">
       ${escapeHtml(roleLabel)} Wallet Address
       <div class="input-with-button">
         <input id="modalAddressInput" name="address" required placeholder="0x…" autocomplete="off" spellcheck="false">
-        <button type="button" id="modalPasteBtn" class="paste-chip-btn">📋 Paste</button>
+        <button type="button" id="modalPasteBtn" class="paste-chip-btn">
+          <i class="hgi-stroke hgi-copy-01"></i> Paste
+        </button>
       </div>
     </label>
     <div id="modalAddressFeedback" class="validation-feedback info">
+      <i class="hgi-stroke hgi-information-circle"></i>
       <span>Requires a 42-character Ethereum address (0x…)</span>
     </div>
-    <div class="notice">
-      <b>Smart contract access control:</b> The recipient wallet must have the <code>${escapeHtml(roleLabel)}</code> role approved by the Regulator on-chain.
+    <div class="alert info">
+      <div class="alert-icon"><i class="hgi-stroke hgi-shield-user"></i></div>
+      <div class="alert-body">
+        <div class="alert-title">Access Control Requirement</div>
+        <div class="alert-description">The recipient wallet must have the <code>${escapeHtml(roleLabel)}</code> role approved by the Regulator on-chain.</div>
+      </div>
     </div>
   `;
 
@@ -326,7 +342,7 @@ function promptAddressModal({ title, subtitle, roleLabel, iconType = "distributo
     iconHtml: iconSvg,
     bodyHtml,
     confirmText: "Confirm Address",
-    onMount: ({ resolve, form, confirmBtn }) => {
+    onMount: ({ resolve, form }) => {
       const input = $("#modalAddressInput");
       const feedback = $("#modalAddressFeedback");
       const pasteBtn = $("#modalPasteBtn");
@@ -335,16 +351,16 @@ function promptAddressModal({ title, subtitle, roleLabel, iconType = "distributo
         const val = input.value.trim();
         if (!val) {
           feedback.className = "validation-feedback info";
-          feedback.innerHTML = "<span>Requires a 42-character Ethereum address (0x…)</span>";
+          feedback.innerHTML = `<i class="hgi-stroke hgi-information-circle"></i> <span>Requires a 42-character Ethereum address (0x…)</span>`;
           return false;
         }
         if (ethers.isAddress(val)) {
           feedback.className = "validation-feedback valid";
-          feedback.innerHTML = `<span>✓ Valid Ethereum address (${short(val)})</span>`;
+          feedback.innerHTML = `<i class="hgi-stroke hgi-checkmark-circle-02"></i> <span>Valid Ethereum address (${short(val)})</span>`;
           return true;
         } else {
           feedback.className = "validation-feedback invalid";
-          feedback.innerHTML = "<span>⚠ Invalid Ethereum address checksum or format</span>";
+          feedback.innerHTML = `<i class="hgi-stroke hgi-alert-circle"></i> <span>Invalid Ethereum address checksum or format</span>`;
           return false;
         }
       }
@@ -379,7 +395,7 @@ function promptAddressModal({ title, subtitle, roleLabel, iconType = "distributo
 }
 
 function promptPatientModal({ batchId }) {
-  const iconSvg = `<svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><circle cx="12" cy="11" r="3"/></svg>`;
+  const iconSvg = `<i class="hgi-stroke hgi-lock-key"></i>`;
 
   const bodyHtml = `
     <label for="modalPatientInput">
@@ -389,7 +405,7 @@ function promptPatientModal({ batchId }) {
     <div class="privacy-preview-box">
       <div class="privacy-preview-head">
         <span>Live keccak256 cryptographic preview</span>
-        <span>🔒 Zero-Knowledge</span>
+        <span><i class="hgi-stroke hgi-lock-key"></i> Zero-Knowledge</span>
       </div>
       <div class="privacy-hash-display" id="modalHashDisplay">Type patient ID above to preview cryptographic hash</div>
       <p class="privacy-guarantee-note">
@@ -433,7 +449,7 @@ function promptPatientModal({ batchId }) {
 }
 
 function promptUrlModal({ currentUrl }) {
-  const iconSvg = `<svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>`;
+  const iconSvg = `<i class="hgi-stroke hgi-wifi-01"></i>`;
 
   const bodyHtml = `
     <label for="modalUrlInput">
@@ -441,10 +457,15 @@ function promptUrlModal({ currentUrl }) {
       <input id="modalUrlInput" name="url" required value="${escapeHtml(currentUrl)}" placeholder="http://192.168.0.106:8080">
     </label>
     <div id="modalUrlFeedback" class="validation-feedback info">
+      <i class="hgi-stroke hgi-information-circle"></i>
       <span>Must begin with http:// or https://</span>
     </div>
-    <div class="notice">
-      <b>Tip:</b> If viewing from a phone on the same Wi-Fi, enter your computer's local network IP address (e.g. <code>http://192.168.1.50:8080</code>).
+    <div class="alert info">
+      <div class="alert-icon"><i class="hgi-stroke hgi-qr-code"></i></div>
+      <div class="alert-body">
+        <div class="alert-title">Local Wi-Fi Verification</div>
+        <div class="alert-description">If scanning from a phone on your local Wi-Fi, provide your computer's local network IP address (e.g. <code>http://192.168.1.50:8080</code>).</div>
+      </div>
     </div>
   `;
 
@@ -469,7 +490,7 @@ function promptUrlModal({ currentUrl }) {
           resolve(url.origin);
         } catch {
           feedback.className = "validation-feedback invalid";
-          feedback.innerHTML = "<span>⚠ Enter a valid http:// or https:// URL format</span>";
+          feedback.innerHTML = `<i class="hgi-stroke hgi-alert-circle"></i> <span>Enter a valid http:// or https:// URL format</span>`;
           input.focus();
         }
       });
@@ -479,8 +500,8 @@ function promptUrlModal({ currentUrl }) {
 
 function confirmModal({ title, message, confirmText = "Confirm", cancelText = "Cancel", isDanger = false }) {
   const iconSvg = isDanger
-    ? `<svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`
-    : `<svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
+    ? `<i class="hgi-stroke hgi-alert-triangle"></i>`
+    : `<i class="hgi-stroke hgi-information-circle"></i>`;
 
   const bodyHtml = `
     <p style="margin: 0; font-size: 0.95rem; line-height: 1.5; color: var(--ink-secondary);">
@@ -512,7 +533,15 @@ function confirmModal({ title, message, confirmText = "Confirm", cancelText = "C
 async function init() {
   config = await fetch("contract.json").then(r => r.json());
   if (!config.address || !config.abi?.length) { 
-    app.innerHTML = `<div class="notice danger">No deployment found. Start a local node and run the deploy script first.</div>`; 
+    app.innerHTML = `
+      <div class="alert destructive">
+        <div class="alert-icon"><i class="hgi-stroke hgi-alert-circle"></i></div>
+        <div class="alert-body">
+          <div class="alert-title">No Deployment Found</div>
+          <div class="alert-description">Start a local node and run the deploy script first.</div>
+        </div>
+      </div>
+    `; 
     return; 
   }
   
@@ -553,7 +582,7 @@ function updateModeControls() {
   const connectBtn = $("#connectButton");
   if (connectBtn) {
     connectBtn.innerHTML = `
-      <svg class="wallet-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="3"/><path d="M18 12h.01"/><path d="M2 10h20"/></svg>
+      <i class="hgi-stroke hgi-wallet-01" aria-hidden="true"></i>
       <span>${account ? short(account) : "Connect wallet"}</span>
     `;
     if (account) {
@@ -592,14 +621,16 @@ function applyPreset(name) {
 
 function bindPolishEvents() { 
   document.addEventListener("click", e => { 
-    const action = e.target.dataset.action; 
+    const action = e.target.closest("[data-action]")?.dataset?.action; 
     if (action === "verify-chip") { 
-      $("#verifyId").value = `VX${String(e.target.dataset.id).padStart(3, "0")}`; 
-      return verify(e.target.dataset.id); 
+      const id = e.target.closest("[data-id]")?.dataset?.id;
+      $("#verifyId").value = `VX${String(id).padStart(3, "0")}`; 
+      return verify(id); 
     } 
     if (action === "request-role") { 
       if (!requireWallet()) return; 
-      return tx(write.requestRole(roleIds[e.target.dataset.role]), "Role request submitted.", "requestRole"); 
+      const role = e.target.closest("[data-role]")?.dataset?.role;
+      return tx(write.requestRole(roleIds[role]), "Role request submitted.", "requestRole"); 
     } 
   }); 
   document.addEventListener("change", e => { 
@@ -706,7 +737,7 @@ function batchCard(b, actions = "") {
         </div>
       </div>
       <div class="actions">
-        <a class="button light" href="#/batch/${b.id}">Passport</a>
+        <a class="button light" href="#/batch/${b.id}"><i class="hgi-stroke hgi-passport"></i> Passport</a>
         ${expiryAction(b)}
         ${actions}
       </div>
@@ -747,7 +778,15 @@ async function render() {
     else if (route === "analytics") await renderAnalytics(); 
     else await renderHome();
   } catch (e) { 
-    app.innerHTML = `<div class="notice danger">Unable to read the blockchain: ${escapeHtml(friendly(e))}</div>`; 
+    app.innerHTML = `
+      <div class="alert destructive">
+        <div class="alert-icon"><i class="hgi-stroke hgi-alert-circle"></i></div>
+        <div class="alert-body">
+          <div class="alert-title">Blockchain Read Error</div>
+          <div class="alert-description">${escapeHtml(friendly(e))}</div>
+        </div>
+      </div>
+    `; 
   }
 }
 
@@ -756,19 +795,24 @@ function renderAccessDenied(role) {
   const localHint = Number(config.chainId) === 31337 && role === "logger" 
     ? `<p><b>Local seeded Logger:</b> Hardhat account #4 ending in <span class="address">…6A65</span>. A MetaMask account label does not grant an on-chain role.</p>` 
     : ""; 
-  const request = role === "logger" ? `<button class="button teal" data-action="request-role" data-role="logger">Request Logger role</button>` : ""; 
+  const request = role === "logger" ? `<button class="button teal" data-action="request-role" data-role="logger"><i class="hgi-stroke hgi-user-add-01"></i> Request Logger role</button>` : ""; 
   
   app.innerHTML = page("Access restricted", `This workspace requires the approved ${label} role.`, `
-    <div class="notice danger">
-      <b>RBAC enforcement</b>
-      <p>Connected account: ${copyableAddress(account)}. This address does not have the on-chain ${label} role.</p>
-      ${localHint}
+    <div class="alert destructive">
+      <div class="alert-icon"><i class="hgi-stroke hgi-shield-user"></i></div>
+      <div class="alert-body">
+        <div class="alert-title">RBAC Enforcement Active</div>
+        <div class="alert-description">
+          Connected account: ${copyableAddress(account)}. This address does not possess the on-chain <b>${label}</b> role.
+          ${localHint}
+        </div>
+      </div>
     </div>
     <div class="actions">
       ${request}
-      <button class="button teal" data-action="connect">Recheck MetaMask account</button>
-      <a class="button light" href="#/register">Request a role</a>
-      <a class="button light" href="#/">Return home</a>
+      <button class="button teal" data-action="connect"><i class="hgi-stroke hgi-wallet-01"></i> Recheck Account</button>
+      <a class="button light" href="#/register"><i class="hgi-stroke hgi-user-add-01"></i> Request a Role</a>
+      <a class="button light" href="#/"><i class="hgi-stroke hgi-home-01"></i> Return Home</a>
     </div>
   `); 
 }
@@ -779,38 +823,47 @@ async function renderHome() {
   
   app.innerHTML = `
     <section class="hero">
-      <div class="eyebrow">Cold-Chain Blockchain Passport</div>
+      <div class="eyebrow"><i class="hgi-stroke hgi-shield-tick"></i> Cold-Chain Blockchain Passport</div>
       <h1>A tamper-evident passport for every vaccine batch.</h1>
       <p>VaxPass records custodian handovers, temperature excursions, dynamic expiry reduction, and zero-knowledge dose administration on Ethereum.</p>
       <div class="hero-badges">
-        <span>🛡️ On-Chain Role Custody</span>
-        <span>❄️ Real-Time Excursion Burn-down</span>
-        <span>🔒 Zero-Knowledge Patient Privacy</span>
+        <span><i class="hgi-stroke hgi-shield-tick"></i> On-Chain Role Custody</span>
+        <span><i class="hgi-stroke hgi-thermometer-cold"></i> Real-Time Excursion Burn-down</span>
+        <span><i class="hgi-stroke hgi-lock-key"></i> Zero-Knowledge Patient Privacy</span>
       </div>
       <div class="hero-actions">
-        <a class="button teal" href="#/verify">Verify a Batch</a>
-        <button class="button light" data-action="connect">${account ? `Connected (${short(account)})` : "Connect Wallet"}</button>
+        <a class="button teal" href="#/verify"><i class="hgi-stroke hgi-qr-code"></i> Verify a Batch</a>
+        <button class="button light" data-action="connect"><i class="hgi-stroke hgi-wallet-01"></i> ${account ? `Connected (${short(account)})` : "Connect Wallet"}</button>
       </div>
     </section>
 
     <section class="grid three" style="margin:24px 0">
-      <a class="card quick" href="#/manufacturer">
-        <div><b>Register a Batch</b><br><small class="muted">Manufacturer initialization</small></div>
-        <span>→</span>
+      <a class="quick" href="#/manufacturer">
+        <div class="quick-icon-group">
+          <div class="quick-icon-badge"><i class="hgi-stroke hgi-factory"></i></div>
+          <div><b>Register a Batch</b><br><small class="muted">Manufacturer initialization</small></div>
+        </div>
+        <span><i class="hgi-stroke hgi-arrow-right-01"></i></span>
       </a>
-      <a class="card quick" href="#/distributor">
-        <div><b>Track Custody</b><br><small class="muted">Dual-handover in transit</small></div>
-        <span>→</span>
+      <a class="quick" href="#/distributor">
+        <div class="quick-icon-group">
+          <div class="quick-icon-badge"><i class="hgi-stroke hgi-truck-delivery"></i></div>
+          <div><b>Track Custody</b><br><small class="muted">Dual-handover in transit</small></div>
+        </div>
+        <span><i class="hgi-stroke hgi-arrow-right-01"></i></span>
       </a>
-      <a class="card quick" href="#/clinic">
-        <div><b>Administer Safely</b><br><small class="muted">Private hashed dose log</small></div>
-        <span>→</span>
+      <a class="quick" href="#/clinic">
+        <div class="quick-icon-group">
+          <div class="quick-icon-badge"><i class="hgi-stroke hgi-hospital-01"></i></div>
+          <div><b>Administer Safely</b><br><small class="muted">Private hashed dose log</small></div>
+        </div>
+        <span><i class="hgi-stroke hgi-arrow-right-01"></i></span>
       </a>
     </section>
 
     ${page("Recent Batches", "Live data from the configured Ethereum network.", `
       <div class="grid three">
-        ${recent.length ? recent.map(b => batchCard(b)).join("") : emptyState("No vaccine batches yet", "Register a new batch from the Manufacturer workspace to begin tracking.", '<a class="button teal" href="#/manufacturer">Register First Batch</a>')}
+        ${recent.length ? recent.map(b => batchCard(b)).join("") : emptyState("No vaccine batches yet", "Register a new batch from the Manufacturer workspace to begin tracking.", '<a class="button teal" href="#/manufacturer"><i class="hgi-stroke hgi-factory"></i> Register First Batch</a>')}
       </div>
     `)}
     ${activityTicker()}
@@ -825,7 +878,7 @@ function activityTicker() {
           <span class="stat-kicker">Live blockchain activity</span>
           <h2>Recent network events</h2>
         </div>
-        <span class="role-chip">Auto-updating</span>
+        <span class="role-chip"><i class="hgi-stroke hgi-activity-01"></i> Auto-updating</span>
       </div>
       <div class="activity-list">
         ${activity.length ? activity.slice(0, 8).map(item => `
@@ -894,7 +947,7 @@ function renderRegister() {
               <option value="logger">Temperature logger</option>
             </select>
           </label>
-          <button class="button teal">Request role</button>
+          <button class="button teal"><i class="hgi-stroke hgi-user-add-01"></i> Request role</button>
         </form>
       </div>
       <aside class="card">
@@ -921,8 +974,8 @@ async function renderRegulator() {
             </select>
           </label>
           <div class="actions">
-            <button class="button teal" name="op" value="approve">Approve requested role</button>
-            <button class="button danger" name="op" value="revoke">Revoke</button>
+            <button class="button teal" name="op" value="approve"><i class="hgi-stroke hgi-checkmark-circle-02"></i> Approve requested role</button>
+            <button class="button danger" name="op" value="revoke"><i class="hgi-stroke hgi-cancel-circle"></i> Revoke</button>
           </div>
         </form>
       </div>
@@ -931,7 +984,7 @@ async function renderRegulator() {
         <form id="recallForm">
           <label>Batch ID<input id="recallId" min="1" type="number" required placeholder="1"></label>
           <label>Reason<textarea id="recallReason" required placeholder="Safety notice or quality reason"></textarea></label>
-          <button class="button danger">Recall batch</button>
+          <button class="button danger"><i class="hgi-stroke hgi-alert-triangle"></i> Recall batch</button>
         </form>
       </div>
     </div>
@@ -942,8 +995,8 @@ async function renderManufacturer() {
   const list = await batches(); 
   const mine = account ? list.filter(b => b.manufacturer.toLowerCase() === account.toLowerCase()) : [];
   const actions = b => Number(b.status) === 0 && b.custodian.toLowerCase() === account?.toLowerCase() 
-    ? `<button class="button teal" data-action="dispatch" data-id="${b.id}">Dispatch</button>` 
-    : `<button class="button light" disabled title="Only the current custodian can dispatch a manufactured batch.">Dispatch unavailable</button>`;
+    ? `<button class="button teal" data-action="dispatch" data-id="${b.id}"><i class="hgi-stroke hgi-truck-delivery"></i> Dispatch</button>` 
+    : `<button class="button light" disabled title="Only the current custodian can dispatch a manufactured batch."><i class="hgi-stroke hgi-lock-key"></i> Dispatch unavailable</button>`;
 
   app.innerHTML = page("Manufacturer workspace", "Register a vaccine batch and begin its cold-chain passport.", `
     <div class="grid two">
@@ -962,18 +1015,24 @@ async function renderManufacturer() {
           </div>
           <label>Excursion budget (minutes)<input id="budget" type="number" min="0" value="30" required></label>
           <label>IPFS CID (optional document reference)<input id="cid" placeholder="Qm…"></label>
-          <button class="button teal">Register on-chain</button>
+          <button class="button teal"><i class="hgi-stroke hgi-checkmark-circle-02"></i> Register on-chain</button>
         </form>
       </div>
       <div class="card">
         <h3>Dispatch instructions</h3>
-        <p>Use the dispatch button on a manufactured batch to assign custody to an approved distributor. You will be prompted with a popup to enter their Ethereum address.</p>
-        <p class="notice">${account ? `Connected as ${copyableAddress(account)}.` : "Connect the manufacturer wallet to see your registered batches."}</p>
+        <p>Use the dispatch button on a manufactured batch to assign custody to an approved distributor. A popup modal will prompt for their Ethereum address.</p>
+        <div class="alert info">
+          <div class="alert-icon"><i class="hgi-stroke hgi-user-check-01"></i></div>
+          <div class="alert-body">
+            <div class="alert-title">Connected Identity</div>
+            <div class="alert-description">${account ? copyableAddress(account) : "Connect the manufacturer wallet to see your registered batches."}</div>
+          </div>
+        </div>
       </div>
     </div>
     <h2 style="margin-top:32px">My batches</h2>
     <div class="grid three">
-      ${mine.length ? mine.map(b => batchCard(b, actions(b))).join("") : emptyState("No manufacturer batches found", account ? "You haven't registered any batches with this wallet yet." : "Connect the manufacturer wallet to view your batches.", account ? '<a class="button teal" href="#batchForm">Register Batch Above</a>' : '<button class="button teal" data-action="connect">Connect Wallet</button>')}
+      ${mine.length ? mine.map(b => batchCard(b, actions(b))).join("") : emptyState("No manufacturer batches found", account ? "You haven't registered any batches with this wallet yet." : "Connect the manufacturer wallet to view your batches.", account ? '<a class="button teal" href="#batchForm"><i class="hgi-stroke hgi-factory"></i> Register Batch Above</a>' : '<button class="button teal" data-action="connect"><i class="hgi-stroke hgi-wallet-01"></i> Connect Wallet</button>')}
     </div>
   `);
 
@@ -1002,21 +1061,35 @@ async function renderDistributor() {
     }
   }
 
-  const incomingActions = b => `<button class="button teal" data-action="accept" data-id="${b.id}">Accept custody</button>`;
+  const incomingActions = b => `<button class="button teal" data-action="accept" data-id="${b.id}"><i class="hgi-stroke hgi-checkmark-circle-02"></i> Accept custody</button>`;
   const outgoingActions = b => Number(b.status) === 1 && !b.clinic.match(/^0x0+$/) && !b.distributorConfirmed 
-    ? `<button class="button teal" data-action="confirm" data-id="${b.id}">Confirm handover</button>` 
+    ? `<button class="button teal" data-action="confirm" data-id="${b.id}"><i class="hgi-stroke hgi-checkmark-circle-02"></i> Confirm handover</button>` 
     : Number(b.status) === 1 && b.clinic.match(/^0x0+$/) 
-      ? `<button class="button teal" data-action="deliver" data-id="${b.id}">Deliver to clinic</button>` 
-      : `<button class="button light" disabled title="Distributor handover is already confirmed or this batch is not awaiting action.">Handover confirmed</button>`;
+      ? `<button class="button teal" data-action="deliver" data-id="${b.id}"><i class="hgi-stroke hgi-hospital-01"></i> Deliver to clinic</button>` 
+      : `<button class="button light" disabled title="Distributor handover is already confirmed or this batch is not awaiting action."><i class="hgi-stroke hgi-checkmark-circle-02"></i> Handover confirmed</button>`;
 
   app.innerHTML = page("Distributor workspace", "Accept shipments, identify the destination clinic, and confirm dual handover.", `
-    <h2>Incoming custody requests</h2>
-    <div class="grid three">
-      ${incoming.length ? incoming.map(b => batchCard(b, incomingActions(b))).join("") : emptyState("No incoming requests", "When a manufacturer dispatches a batch to your distributor address, it will appear here.")}
-    </div>
-    <h2 style="margin-top:32px">My in-transit batches</h2>
-    <div class="grid three">
-      ${outgoing.length ? outgoing.map(b => batchCard(b, outgoingActions(b))).join("") : emptyState("No batches in your custody", "Batches you have accepted custody for will be listed here.")}
+    <div class="tabs">
+      <div class="tabs-list" role="tablist">
+        <button class="tabs-trigger ${distributorTab === 'incoming' ? 'active' : ''}" data-action="switch-dist-tab" data-tab="incoming">
+          <i class="hgi-stroke hgi-inbox-in"></i> Incoming Requests (${incoming.length})
+        </button>
+        <button class="tabs-trigger ${distributorTab === 'outgoing' ? 'active' : ''}" data-action="switch-dist-tab" data-tab="outgoing">
+          <i class="hgi-stroke hgi-truck-delivery"></i> In-Transit Custody (${outgoing.length})
+        </button>
+      </div>
+
+      <div class="tabs-content ${distributorTab === 'incoming' ? 'active' : ''}">
+        <div class="grid three">
+          ${incoming.length ? incoming.map(b => batchCard(b, incomingActions(b))).join("") : emptyState("No incoming requests", "When a manufacturer dispatches a batch to your distributor address, it will appear here.")}
+        </div>
+      </div>
+
+      <div class="tabs-content ${distributorTab === 'outgoing' ? 'active' : ''}">
+        <div class="grid three">
+          ${outgoing.length ? outgoing.map(b => batchCard(b, outgoingActions(b))).join("") : emptyState("No batches in your custody", "Batches you have accepted custody for will be listed here until delivered.")}
+        </div>
+      </div>
     </div>
   `);
 }
@@ -1027,17 +1100,21 @@ async function renderClinic() {
   
   const actions = b => { 
     if (Number(b.status) === 1 && b.clinic.toLowerCase() === account?.toLowerCase()) {
-      return `<button class="button teal" data-action="confirm" data-id="${b.id}">Confirm receipt</button>`; 
+      return `<button class="button teal" data-action="confirm" data-id="${b.id}"><i class="hgi-stroke hgi-checkmark-circle-02"></i> Confirm receipt</button>`; 
     }
     if ([2, 3].includes(Number(b.status)) && b.custodian.toLowerCase() === account?.toLowerCase()) {
-      return `<button class="button teal" data-action="administer" data-id="${b.id}">Administer dose</button>`; 
+      return `<button class="button teal" data-action="administer" data-id="${b.id}"><i class="hgi-stroke hgi-injection"></i> Administer dose</button>`; 
     }
     return ""; 
   };
 
   app.innerHTML = page("Clinic workspace", "Confirm receipt, then administer doses with zero-knowledge patient hashing.", `
-    <div class="notice">
-      <b>Zero-Knowledge Privacy:</b> Patient IDs are hashed in your local browser using <code>keccak256</code>. The plaintext ID is never sent to the blockchain or stored in any server.
+    <div class="alert info">
+      <div class="alert-icon"><i class="hgi-stroke hgi-lock-key"></i></div>
+      <div class="alert-body">
+        <div class="alert-title">Zero-Knowledge Patient Privacy</div>
+        <div class="alert-description">Patient identifiers are hashed locally in your browser using <code>keccak256</code>. The plaintext ID is never sent to the blockchain or stored in any server.</div>
+      </div>
     </div>
     <div class="grid three" style="margin-top:22px">
       ${relevant.length ? relevant.map(b => batchCard(b, actions(b))).join("") : emptyState("No clinic deliveries found", "When a distributor designates your clinic for delivery, the batch will appear here.")}
@@ -1049,7 +1126,7 @@ async function renderSensorConsole(id = selectedSensorBatch) {
   if (!activeRoles.includes("logger")) {
     return app.innerHTML = page("Sensor console", "Switch to an approved Temperature Logger account to record simulated readings.", `
       <div class="card empty">
-        <a class="button teal" href="#/batch/${id || 1}">Open batch passport</a>
+        <a class="button teal" href="#/batch/${id || 1}"><i class="hgi-stroke hgi-passport"></i> Open batch passport</a>
       </div>
     `);
   }
@@ -1088,14 +1165,14 @@ async function renderSensorConsole(id = selectedSensorBatch) {
           </select>
         </label>
         <div class="sensor-actions">
-          <button class="button teal" data-action="sensor-mode" data-mode="normal">Normal (2–8 °C)</button>
-          <button class="button" data-action="sensor-mode" data-mode="spike">Spike (12–15 °C)</button>
-          <button class="button danger" data-action="sensor-mode" data-mode="breach">Breach (22–25 °C)</button>
+          <button class="button teal" data-action="sensor-mode" data-mode="normal"><i class="hgi-stroke hgi-checkmark-circle-02"></i> Normal (2–8 °C)</button>
+          <button class="button" data-action="sensor-mode" data-mode="spike"><i class="hgi-stroke hgi-alert-triangle"></i> Spike (12–15 °C)</button>
+          <button class="button danger" data-action="sensor-mode" data-mode="breach"><i class="hgi-stroke hgi-fire"></i> Breach (22–25 °C)</button>
         </div>
         <div class="sensor-custom">
           <label>Custom temperature (°C)<input id="sensorTemp" type="number" step="0.1" value="5"></label>
           <label>Duration (minutes)<input id="sensorDuration" type="number" min="1" value="5"></label>
-          <button class="button light" data-action="sensor-custom">Log custom reading</button>
+          <button class="button light" data-action="sensor-custom"><i class="hgi-stroke hgi-thermometer-cold"></i> Log custom reading</button>
         </div>
         <p class="sensor-note">Normal: within 2–8 °C · Spike: minor excursion burning budget · Breach: major thermal breach.</p>
       </section>
@@ -1110,11 +1187,19 @@ async function renderSensorConsole(id = selectedSensorBatch) {
         <div class="progress ${Number(batch.status) === 5 ? 'gauge-danger' : pct >= 50 ? 'gauge-warn' : 'gauge-safe'}">
           <i style="width:${pct}%"></i>
         </div>
-        ${Number(batch.status) === 5 ? `<div class="notice danger sensor-alert">⚠ SPOILED: Excursion budget exceeded. Smart contract blocks further custody and doses.</div>` : ""}
+        ${Number(batch.status) === 5 ? `
+          <div class="alert destructive sensor-alert">
+            <div class="alert-icon"><i class="hgi-stroke hgi-alert-triangle"></i></div>
+            <div class="alert-body">
+              <div class="alert-title">SPOILED BATCH</div>
+              <div class="alert-description">Excursion budget exceeded. Smart contract blocks further custody and doses.</div>
+            </div>
+          </div>
+        ` : ""}
         <div class="sensor-feed">
           ${sensorFeed.length ? sensorFeed.map(item => `
             <div class="sensor-reading ${item.state}">
-              <span>${item.state === "pending" ? "◌" : item.state === "confirmed" ? "✓" : "!"}</span>
+              <span><i class="hgi-stroke ${item.state === "pending" ? "hgi-loading-03" : item.state === "confirmed" ? "hgi-checkmark-circle-02" : "hgi-cancel-circle"}"></i></span>
               <b>${item.temp} °C</b>
               <small>${item.duration} min · ${item.state}</small>
             </div>
@@ -1149,13 +1234,7 @@ async function renderBatch(id) {
   const gaugeClass = Number(b.status) === 5 ? "gauge-danger" : pct >= 50 ? "gauge-warn" : "gauge-safe";
   const stepperHtml = stepper(b);
   const qrUrl = verificationUrl(id);
-  const qrSetup = isLocalFrontend() ? `
-    <div class="qr-setup">
-      <p class="muted">This page is on <b>localhost</b>. Phone cameras cannot resolve localhost.</p>
-      <button class="button light" data-action="set-qr-url">Set phone-accessible network URL</button>
-    </div>
-  ` : "";
-  const sensorLink = activeRoles.includes("logger") ? `<a class="button light" href="#/sensor/${id}">Open Sensor Console</a>` : "";
+  const sensorLink = activeRoles.includes("logger") ? `<a class="button light" href="#/sensor/${id}"><i class="hgi-stroke hgi-thermometer-cold"></i> Open Sensor Console</a>` : "";
 
   app.innerHTML = page(`${vx(b.id)} passport`, "An on-chain, temperature-aware cold-chain passport.", `
     <div class="grid two">
@@ -1184,18 +1263,39 @@ async function renderBatch(id) {
         </div>
       </section>
 
-      <section class="card">
-        <h3>Temperature record</h3>
-        <canvas id="tempChart" class="chart" width="520" height="220"></canvas>
-        <p class="muted">${logs.length} telemetry reading(s); values in °C.</p>
-        <div class="qr-heading">
-          <h3>Public verification QR</h3>
-          <span class="role-chip">MetaMask not required</span>
+      <!-- Shadcn Framed QR Code Component -->
+      <section class="qr-card">
+        <div class="qr-card-header">
+          <div class="qr-card-title-group">
+            <h3 class="qr-card-title"><i class="hgi-stroke hgi-qr-code"></i> Public Verification QR</h3>
+            <p class="qr-card-description">Instant field verification for clinics, regulators, and recipients</p>
+          </div>
+          <span class="qr-card-badge"><i class="hgi-stroke hgi-shield-tick"></i> Verified on Ethereum</span>
         </div>
-        <div id="qr" class="qr" aria-label="QR code for public batch verification"></div>
-        <p class="qr-url">${escapeHtml(qrUrl)}</p>
-        ${qrSetup}
-        <p class="qr-help">This QR code opens instant public batch verification without needing a wallet.</p>
+
+        <div class="qr-card-content">
+          <div class="qr-viewfinder">
+            <div class="qr-brackets-other"></div>
+            <div id="qr" class="qr-canvas-holder" aria-label="QR code for batch verification"></div>
+          </div>
+          <div class="qr-url-pill">
+            <i class="hgi-stroke hgi-link-01"></i>
+            <span class="qr-url-text">${escapeHtml(qrUrl)}</span>
+          </div>
+        </div>
+
+        <div class="qr-card-footer">
+          <button type="button" class="button light" data-action="copy-qr-url" data-url="${escapeHtml(qrUrl)}">
+            <i class="hgi-stroke hgi-copy-01"></i> Copy Link
+          </button>
+          <button type="button" class="button light" data-action="download-qr" data-id="${b.id}">
+            <i class="hgi-stroke hgi-download-01"></i> Download QR
+          </button>
+          <a class="button light" href="#/verify/${b.id}">
+            <i class="hgi-stroke hgi-link-external-01"></i> Verify Now
+          </a>
+          ${isLocalFrontend() ? `<button type="button" class="button light" data-action="set-qr-url"><i class="hgi-stroke hgi-wifi-01"></i> Set Phone IP</button>` : ""}
+        </div>
       </section>
     </div>
 
@@ -1214,6 +1314,10 @@ async function renderBatch(id) {
       </section>
 
       <section class="card">
+        <h3>Temperature record</h3>
+        <canvas id="tempChart" class="chart" width="520" height="220"></canvas>
+        <p class="muted" style="margin: 8px 0 16px">${logs.length} telemetry reading(s); values in °C.</p>
+        
         <h3>Temperature logs</h3>
         <div class="table-wrap">
           <table>
@@ -1231,7 +1335,7 @@ async function renderBatch(id) {
                   <td>${date(l.timestamp)}</td>
                   <td>${temp(l.tempX10)}</td>
                   <td>${l.durationMins} min</td>
-                  <td>${l.excursion ? `<span style="color:var(--danger)">Excursion</span>` : `<span style="color:var(--safe)">In range</span>`}</td>
+                  <td>${l.excursion ? `<span style="color:var(--danger)"><i class="hgi-stroke hgi-alert-triangle"></i> Excursion</span>` : `<span style="color:var(--safe)"><i class="hgi-stroke hgi-checkmark-circle-02"></i> In range</span>`}</td>
                 </tr>
               `).join("") || `<tr><td colspan="4" style="text-align:center; color:var(--muted)">No readings logged yet.</td></tr>`}
             </tbody>
@@ -1276,14 +1380,14 @@ function renderVerify(initialId) {
   app.innerHTML = page("Public batch verification", "Check any vaccine passport status directly on the blockchain without connecting a wallet.", `
     <div class="card">
       <div class="try-chips" aria-label="Try a sample batch">
-        <button class="role-chip" data-action="verify-chip" data-id="1">Try Batch VX001</button>
-        <button class="role-chip" data-action="verify-chip" data-id="2">Try Batch VX002</button>
+        <button class="role-chip" data-action="verify-chip" data-id="1"><i class="hgi-stroke hgi-qr-code"></i> Try Batch VX001</button>
+        <button class="role-chip" data-action="verify-chip" data-id="2"><i class="hgi-stroke hgi-qr-code"></i> Try Batch VX002</button>
       </div>
       <form id="verifyForm">
         <label>Batch ID (for example 1 or VX001)
           <input id="verifyId" value="${initialId ? `VX${String(initialId).padStart(3, "0")}` : ""}" placeholder="VX001" required>
         </label>
-        <button class="button teal">Verify batch</button>
+        <button class="button teal"><i class="hgi-stroke hgi-search-01"></i> Verify batch</button>
       </form>
     </div>
     <div id="verifyResult" style="margin-top:20px"></div>
@@ -1296,17 +1400,18 @@ async function verify(raw) {
   const id = Number(String(raw).replace(/\D/g, "")); 
   const target = $("#verifyResult"); 
   if (!target) return;
-  if (!id) return target.innerHTML = `<div class="notice danger">Please enter a valid batch ID.</div>`; 
+  if (!id) return target.innerHTML = `<div class="alert destructive"><div class="alert-icon"><i class="hgi-stroke hgi-alert-circle"></i></div><div class="alert-body"><div class="alert-title">Invalid Input</div><div class="alert-description">Please enter a valid batch ID.</div></div></div>`; 
   
   const result = await read.verifyBatch(id); 
   const code = Number(result.code);
   const label = ["VALID", "WARNING", "INVALID"][code]; 
+  const iconName = code === 0 ? "hgi-checkmark-circle-02" : code === 1 ? "hgi-alert-triangle" : "hgi-cancel-circle";
   
   target.innerHTML = `
     <div class="verify-banner verify-${["valid","warning","invalid"][code]}">
-      <h2>${label}</h2>
+      <h2><i class="hgi-stroke ${iconName}"></i> ${label}</h2>
       <p style="font-size:1.05rem; margin:0 0 16px">${escapeHtml(result.message)}</p>
-      ${code !== 2 ? `<a class="button light" href="#/batch/${id}">Open full passport</a>` : ""}
+      ${code !== 2 ? `<a class="button light" href="#/batch/${id}"><i class="hgi-stroke hgi-passport"></i> Open full passport</a>` : ""}
     </div>
   `; 
 }
@@ -1321,25 +1426,40 @@ async function renderAnalytics() {
 
   app.innerHTML = page("Network analytics", "A real-time snapshot of batch volumes, patient impact, and cold-chain compliance.", `
     <div class="grid four analytics-stats">
-      <div class="card stat">
-        <span class="stat-kicker">Tracked inventory</span>
-        <b>${total}</b>
-        <span>Batch${total === 1 ? "" : "es"}</span>
+      <div class="stat-card">
+        <div class="stat-card-header">
+          <span class="stat-card-kicker">Tracked inventory</span>
+          <div class="stat-card-icon"><i class="hgi-stroke hgi-package"></i></div>
+        </div>
+        <div class="stat-card-value">${total}</div>
+        <div class="stat-card-caption">Batch${total === 1 ? "" : "es"} registered</div>
       </div>
-      <div class="card stat">
-        <span class="stat-kicker">Patient impact</span>
-        <b>${stats.dosesAdministered}</b>
-        <span>Doses administered</span>
+
+      <div class="stat-card">
+        <div class="stat-card-header">
+          <span class="stat-card-kicker">Patient impact</span>
+          <div class="stat-card-icon"><i class="hgi-stroke hgi-injection"></i></div>
+        </div>
+        <div class="stat-card-value">${stats.dosesAdministered}</div>
+        <div class="stat-card-caption">Doses administered</div>
       </div>
-      <div class="card stat">
-        <span class="stat-kicker">Safety action</span>
-        <b>${spoiled}</b>
-        <span>Spoiled batches</span>
+
+      <div class="stat-card">
+        <div class="stat-card-header">
+          <span class="stat-card-kicker">Safety action</span>
+          <div class="stat-card-icon"><i class="hgi-stroke hgi-alert-triangle"></i></div>
+        </div>
+        <div class="stat-card-value">${spoiled}</div>
+        <div class="stat-card-caption">Spoiled batches</div>
       </div>
-      <div class="card stat">
-        <span class="stat-kicker">Loss signal</span>
-        <b>${wastage}%</b>
-        <span>Wastage rate</span>
+
+      <div class="stat-card">
+        <div class="stat-card-header">
+          <span class="stat-card-kicker">Loss signal</span>
+          <div class="stat-card-icon"><i class="hgi-stroke hgi-analytics-01"></i></div>
+        </div>
+        <div class="stat-card-value">${wastage}%</div>
+        <div class="stat-card-caption">Wastage rate</div>
       </div>
     </div>
 
@@ -1509,6 +1629,48 @@ function bindEvents() {
       return;
     }
 
+    if (action === "copy-qr-url") {
+      const url = actionTarget.dataset.url;
+      if (url) {
+        try {
+          await navigator.clipboard.writeText(url);
+          toast("Verification link copied to clipboard.");
+        } catch {
+          toast(url);
+        }
+      }
+      return;
+    }
+
+    if (action === "download-qr") {
+      const qrEl = $("#qr");
+      const img = qrEl?.querySelector("img");
+      const canvas = qrEl?.querySelector("canvas");
+      let dataUrl = img?.src;
+      if (!dataUrl && canvas) {
+        dataUrl = canvas.toDataURL("image/png");
+      }
+      if (dataUrl) {
+        const link = document.createElement("a");
+        link.download = `VaxPass-Batch-${vx(actionTarget.dataset.id)}-QR.png`;
+        link.href = dataUrl;
+        link.click();
+        toast("Batch QR code downloaded.");
+      } else {
+        toast("QR code image not ready yet.", true);
+      }
+      return;
+    }
+
+    if (action === "switch-dist-tab") {
+      distributorTab = actionTarget.dataset.tab;
+      document.querySelectorAll(".tabs-trigger").forEach(t => t.classList.toggle("active", t.dataset.tab === distributorTab));
+      const contents = document.querySelectorAll(".tabs-content");
+      if (contents[0]) contents[0].classList.toggle("active", distributorTab === "incoming");
+      if (contents[1]) contents[1].classList.toggle("active", distributorTab === "outgoing");
+      return;
+    }
+
     if (action === "dismiss-shield") { 
       $("#shieldArea").innerHTML = ""; 
       return; 
@@ -1536,7 +1698,6 @@ function bindEvents() {
       return sendSensorReadings(selectedSensorBatch, [[Math.round(temperature * 10), duration]]); 
     } 
 
-    // Custom Modal for Phone-Accessible URL (replaces window.prompt)
     if (action === "set-qr-url") { 
       const current = localStorage.getItem("vaxpassFrontendUrl") || `http://${location.hostname || "127.0.0.1"}:8080`;
       const url = await promptUrlModal({ currentUrl: current });
@@ -1559,7 +1720,6 @@ function bindEvents() {
       return tx(write.confirmReceipt(id), "Receipt confirmation recorded.", "confirmReceipt"); 
     }
 
-    // Custom Modal for Dispatching to Distributor (replaces window.prompt)
     if (action === "dispatch") { 
       const address = await promptAddressModal({
         title: `Dispatch Batch ${vx(id)}`,
@@ -1573,7 +1733,6 @@ function bindEvents() {
       return;
     } 
 
-    // Custom Modal for Delivering to Clinic (replaces window.prompt)
     if (action === "deliver") { 
       const address = await promptAddressModal({
         title: `Deliver Batch ${vx(id)} to Clinic`,
@@ -1587,7 +1746,6 @@ function bindEvents() {
       return;
     } 
 
-    // Custom Modal for Administering Dose with Keccak256 Preview (replaces window.prompt)
     if (action === "administer") { 
       const patientId = await promptPatientModal({ batchId: id });
       if (!patientId) return;
@@ -1655,5 +1813,13 @@ function bindEvents() {
 }
 
 init().catch(e => { 
-  app.innerHTML = `<div class="notice danger">Startup error: ${escapeHtml(friendly(e))}</div>`; 
+  app.innerHTML = `
+    <div class="alert destructive">
+      <div class="alert-icon"><i class="hgi-stroke hgi-alert-circle"></i></div>
+      <div class="alert-body">
+        <div class="alert-title">Startup Error</div>
+        <div class="alert-description">${escapeHtml(friendly(e))}</div>
+      </div>
+    </div>
+  `; 
 });
