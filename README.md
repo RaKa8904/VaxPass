@@ -53,6 +53,8 @@ python -m http.server 8080 --directory frontend
 
 Open `http://localhost:8080`. Add the Hardhat local network to MetaMask (RPC `http://127.0.0.1:8545`, chain ID `31337`, currency `ETH`) and import one of the public development accounts printed by `npm run node`. Never use those development keys on a real network.
 
+Local Hardhat ETH is free test currency. The local chain starts with a zero base fee; MetaMask may still display a nominal gas estimate, but it has no real monetary value. Sepolia transactions are different and require funded test ETH.
+
 Batch QR codes open the public verification route without requiring a wallet. For phone scanning on the same Wi-Fi network:
 
 ```powershell
