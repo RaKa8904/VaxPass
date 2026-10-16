@@ -28,7 +28,7 @@ function errorText(error) { return String(error?.shortMessage || error?.reason |
 function contractEnforcement(error) {
   const text = errorText(error);
   if (/user rejected|ACTION_REJECTED/i.test(text)) return null;
-  const rules = [[/spoiled/i, "This batch is spoiled and cannot be used."], [/recalled/i, "This batch was recalled by the regulator."], [/expired/i, "This batch has expired."], [/patient|duplicate|already administered|hash/i, "This patient identifier has already been administered for this batch."], [/role|unauthorized|not approved|accesscontrol/i, "This wallet does not have the approved role for this action."], [/status|transition|manufactured|custody|receipt/i, "The batch is not in the required status for this action."]];
+  const rules = [[/spoiled/i, "This batch is spoiled and cannot be used."], [/recalled|recall/i, "This batch was already recalled or cannot be recalled in its current state."], [/expired/i, "This batch has expired."], [/patient|duplicate|already administered|hash/i, "This patient identifier has already been administered for this batch."], [/role|unauthorized|not approved|accesscontrol/i, "This wallet does not have the approved role for this action."], [/status|transition|manufactured|custody|receipt/i, "The batch is not in the required status for this action."]];
   const match = rules.find(rule => rule[0].test(text)); return { title: "Blocked by Smart Contract", message: match ? match[1] : "The blockchain rejected this action because its safety rules were not satisfied.", technical: text };
 }
 function showShield(error) { const card = contractEnforcement(error); if (!card) return toast("Transaction cancelled in MetaMask.", false); $("#shieldArea").innerHTML = `<div class="shield-card"><div class="shield-icon">!</div><div><b>${card.title}</b><p>${escapeHtml(card.message)}</p><small>${escapeHtml(card.technical)}</small></div><button class="icon-button" data-action="dismiss-shield" aria-label="Dismiss contract error">×</button></div>`; setTimeout(() => { if ($("#shieldArea")) $("#shieldArea").innerHTML = ""; }, 9000); }
@@ -90,6 +90,8 @@ async function connect(request = true) {
     activeRoles = [];
     for (const [key, id] of Object.entries(roleIds)) if (await read.hasRole(id, account)) activeRoles.push(key);
     updateModeControls();
+    const route = location.hash.replace(/^#\/?/, "").split("/")[0], requiredRole = { regulator: "regulator", manufacturer: "manufacturer", distributor: "distributor", clinic: "clinic", sensor: "logger" }[route], nextRole = ROLE_LANDING_ORDER.find(role => activeRoles.includes(role));
+    if (requiredRole && !activeRoles.includes(requiredRole) && nextRole) location.hash = `#/${nextRole === "logger" ? "sensor" : nextRole}`;
     toast("Wallet connected."); render();
   } catch (e) { toast(friendly(e), true); }
 }

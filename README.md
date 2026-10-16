@@ -65,13 +65,13 @@ Open `http://192.168.0.106:8080` on the computer, open a batch passport, and cli
 
 1. **Contract:** `npx hardhat compile` should compile `VaxPass.sol`.
 2. **Tests:** `npx hardhat test` runs 13 tests covering roles, custody, readings, spoilage, expiry, recall, privacy hashing, verification, and statistics.
-3. **Deploy/seed:** after the commands above, `frontend/contract.json` has a non-empty address and the console reports approvals plus VX001/VX002 registration.
+3. **Deploy/seed:** after the commands above, `frontend/contract.json` has a non-empty address and the console reports approvals plus VX001 through VX005 registration.
 4. **Frontend:** open the site, use **Verify** and enter `VX001`; it works without a wallet. Connect MetaMask for write actions.
 5. **Simulator:** dispatch a batch, then log readings as shown below.
 
 ## Roles and local demo accounts
 
-The seeded local accounts map to the first five Hardhat accounts:
+The seeded local accounts map to the first five Hardhat accounts. The seed script creates five batches, VX001 through VX005, on a fresh chain and adds missing batches without duplicating existing ones:
 
 | Account | Role |
 | --- | --- |

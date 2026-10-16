@@ -17,18 +17,26 @@ async function main() {
   await approve(vax, regulator, clinic, await vax.CLINIC_ROLE(), "clinic");
   await approve(vax, regulator, logger, await vax.LOGGER_ROLE(), "temperature logger");
 
+  const presets = [
+    ["DemoVax", "VX001-LOT", 20, 90, 30, "QmVaxPassDemo1"],
+    ["DemoVax", "VX002-LOT", 10, 120, 45, "QmVaxPassDemo2"],
+    ["ColdStorageVax", "VX003-LOT", 50, 150, 20, "QmVaxPassDemo3"],
+    ["PediatricVax", "VX004-LOT", 30, 180, 30, "QmVaxPassDemo4"],
+    ["TravelVax", "VX005-LOT", 15, 210, 15, "QmVaxPassDemo5"]
+  ];
   const stats = await vax.getStats();
-  if (stats.totalBatches === 0n) {
+  let total = Number(stats.totalBatches);
+  if (total < presets.length) {
     const now = (await ethers.provider.getBlock("latest")).timestamp;
-    await (await vax.connect(manufacturer).registerBatch(
-      "DemoVax", "VX001-LOT", 20, now + 90 * 24 * 60 * 60, 20, 80, 30, "QmVaxPassDemo1"
-    )).wait();
-    await (await vax.connect(manufacturer).registerBatch(
-      "DemoVax", "VX002-LOT", 10, now + 120 * 24 * 60 * 60, 20, 80, 45, "QmVaxPassDemo2"
-    )).wait();
-    console.log("Registered sample batches VX001 and VX002.");
+    for (const [name, lot, doses, expiryDays, budget, cid] of presets.slice(total)) {
+      await (await vax.connect(manufacturer).registerBatch(
+        name, lot, doses, now + expiryDays * 24 * 60 * 60, 20, 80, budget, cid
+      )).wait();
+      total++;
+      console.log(`Registered sample batch VX${String(total).padStart(3, "0")}.`);
+    }
   } else {
-    console.log("Batches already exist; roles were checked without creating duplicates.");
+    console.log(`Batches already exist (${total}); roles were checked without creating duplicates.`);
   }
 }
 
