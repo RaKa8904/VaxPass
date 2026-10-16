@@ -18,7 +18,7 @@ const GUIDE_STEPS = [
   ["Analytics", "Summarize batches, doses, and safety outcomes.", "#/analytics", "regulator"]
 ];
 let config, read, walletProvider, write, account, activeRoles = [], roleIds = {}, mode = "live", activeDemoRole = "regulator", rpcProvider, demoSigners = {}, demoAddresses = {};
-let sensorFeed = [], selectedSensorBatch = 1, lastTransaction = null;
+let sensorFeed = [], selectedSensorBatch = 1, lastTransaction = null, livePoller = null, activity = [];
 
 function short(a = "") { return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "—"; }
 function vx(id) { return `VX${String(id).padStart(3, "0")}`; }
@@ -78,7 +78,7 @@ async function init() {
   if (mode === "demo") await activateDemoRole(localStorage.getItem("vaxpassDemoRole") || "regulator", false);
   else updateModeControls();
   window.addEventListener("hashchange", render);
-  bindEvents(); render();
+  bindEvents(); startLiveUpdates(); render();
 }
 
 function updateModeControls() {
@@ -168,7 +168,16 @@ async function renderHome() {
   const list = await batches(); const recent = list.slice(-3).reverse();
   app.innerHTML = `<section class="hero"><div class="eyebrow">Cold chain, clearly proven</div><h1>A passport for every vaccine batch.</h1><p>VaxPass records custody, temperature excursions, expiry penalties, recalls and privacy-preserving dose administration on Ethereum.</p><a class="button" href="#/verify">Verify a batch</a><button class="button light" data-action="connect">Connect wallet</button></section>
   <section class="grid three" style="margin:24px 0"><a class="card quick" href="#/manufacturer"><b>Register a batch</b><span>→</span></a><a class="card quick" href="#/distributor"><b>Track custody</b><span>→</span></a><a class="card quick" href="#/clinic"><b>Administer safely</b><span>→</span></a></section>
-  ${page("Recent batches", "Live data from the configured Ethereum network.", `<div class="grid three">${recent.length ? recent.map(b => batchCard(b)).join("") : `<div class="card empty">No batches yet.</div>`}</div>`)}`;
+  ${page("Recent batches", "Live data from the configured Ethereum network.", `<div class="grid three">${recent.length ? recent.map(b => batchCard(b)).join("") : `<div class="card empty">No batches yet.</div>`}</div>`)}${activityTicker()}`;
+}
+function activityTicker() { return `<section class="card activity-card"><div class="section-heading"><div><span class="eyebrow dark">Live blockchain activity</span><h2>Recent network events</h2></div><span class="role-chip">Auto-updating</span></div><div class="activity-list">${activity.length ? activity.slice(0, 8).map(item => `<div class="activity-item"><span class="activity-dot"></span><div><b>${escapeHtml(item.name)}</b><span>${item.id ? ` · ${vx(item.id)}` : ""}</span><p>${short(item.actor)} · ${item.time}</p></div></div>`).join("") : `<p class="empty">Waiting for blockchain activity.</p>`}</div></section>`; }
+function addActivity(name, id, actor) { activity.unshift({ name, id, actor, time: new Date().toLocaleTimeString() }); activity = activity.slice(0, 20); }
+function refreshHighlight() { app.classList.remove("live-flash"); void app.offsetWidth; app.classList.add("live-flash"); setTimeout(() => app.classList.remove("live-flash"), 900); }
+function eventActor(name, args) { if (name === "BatchRegistered") return args[2]; if (name === "CustodyTransferred") return args[1]; if (name === "ReceiptConfirmed") return args[1]; if (name === "DoseAdministered") return args[2]; return account; }
+function startLiveUpdates() {
+  const events = ["BatchRegistered", "CustodyTransferred", "ReceiptConfirmed", "TemperatureLogged", "ExcursionDetected", "BatchSpoiled", "BatchRecalled", "DoseAdministered", "BatchExpired"];
+  for (const name of events) read.on(name, (...args) => { const id = Number(args[0]); addActivity(name, id, eventActor(name, args)); refreshHighlight(); render(); });
+  livePoller = setInterval(() => { render(); }, 3000);
 }
 function renderRegister() {
   app.innerHTML = page("Register an organisation role", "Your requested operational role is sent to the regulator. Organisation details stay only in this browser.", `<div class="grid two"><div class="card"><form id="roleForm"><label>Organisation name<input id="orgName" required placeholder="Example Clinic"></label><label>Requested role<select id="requestedRole"><option value="manufacturer">Manufacturer</option><option value="distributor">Distributor</option><option value="clinic">Clinic</option><option value="logger">Temperature logger</option></select></label><button class="button teal">Request role</button></form></div><aside class="card"><h3>How approval works</h3><p>Request a role with MetaMask. A regulator then approves your wallet on-chain. Your organisation name is stored in <code>localStorage</code>, not on-chain.</p></aside></div>`);
