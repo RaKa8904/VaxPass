@@ -3,17 +3,48 @@ setlocal
 cd /d "%~dp0"
 
 echo Starting VaxPass local blockchain...
-start "VaxPass - Hardhat node" powershell -NoExit -Command "Set-Location -LiteralPath '%~dp0'; npm run node"
+start "VaxPass - Hardhat node" powershell -NoProfile -NoExit -Command "Set-Location -LiteralPath '%~dp0'; npm run node"
 
-timeout /t 4 /nobreak >nul
+echo Waiting for Hardhat RPC on port 8545...
+set "RPC_READY="
+for /l %%I in (1,1,30) do (
+	powershell -NoProfile -Command "$client = New-Object Net.Sockets.TcpClient; try { $client.Connect('127.0.0.1',8545); exit 0 } catch { exit 1 } finally { if ($client) { $client.Dispose() } }" >nul 2>&1
+	if not errorlevel 1 (
+		set "RPC_READY=1"
+		goto rpc_ready
+	)
+	timeout /t 1 /nobreak >nul
+)
+
+if not defined RPC_READY (
+	echo.
+	echo ERROR: Hardhat did not open port 8545.
+	echo Check the VaxPass - Hardhat node window for the error.
+	pause
+	exit /b 1
+)
+
+:rpc_ready
+echo Hardhat RPC is ready.
 
 echo Deploying and seeding demo data...
-start "VaxPass - Deploy and seed" powershell -NoExit -Command "Set-Location -LiteralPath '%~dp0'; npm run deploy:local; if ($LASTEXITCODE -eq 0) { npm run seed:local }"
-
-timeout /t 3 /nobreak >nul
+call npm run deploy:local
+if errorlevel 1 (
+	echo.
+	echo ERROR: Contract deployment failed.
+	pause
+	exit /b 1
+)
+call npm run seed:local
+if errorlevel 1 (
+	echo.
+	echo ERROR: Demo data seeding failed.
+	pause
+	exit /b 1
+)
 
 echo Starting VaxPass frontend...
-start "VaxPass - Frontend" powershell -NoExit -Command "Set-Location -LiteralPath '%~dp0'; python -m http.server 8080 --bind 0.0.0.0 --directory frontend"
+start "VaxPass - Frontend" powershell -NoProfile -NoExit -Command "Set-Location -LiteralPath '%~dp0'; python -m http.server 8080 --bind 0.0.0.0 --directory frontend"
 
 echo.
 echo VaxPass is starting.
