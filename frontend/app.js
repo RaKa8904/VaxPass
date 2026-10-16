@@ -3,7 +3,9 @@ const $ = (s) => document.querySelector(s);
 const app = $("#app");
 const STATUS = ["MANUFACTURED", "IN TRANSIT", "DELIVERED", "IN USE", "DEPLETED", "SPOILED", "RECALLED", "EXPIRED"];
 const ROLE_LABELS = { manufacturer: "Manufacturer", distributor: "Distributor", clinic: "Clinic", logger: "Temperature Logger" };
-let config, read, walletProvider, write, account, activeRoles = [], roleIds = {};
+const DEMO_ROLES = ["regulator", "manufacturer", "distributor", "clinic", "logger"];
+const DEMO_ROLE_LABELS = { regulator: "Regulator", manufacturer: "Manufacturer", distributor: "Distributor", clinic: "Clinic", logger: "Temperature Logger" };
+let config, read, walletProvider, write, account, activeRoles = [], roleIds = {}, mode = "live", activeDemoRole = "regulator", rpcProvider, demoSigners = {}, demoAddresses = {};
 
 function short(a = "") { return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "—"; }
 function vx(id) { return `VX${String(id).padStart(3, "0")}`; }
@@ -16,6 +18,7 @@ function verificationUrl(id) {
   return `${base}/#/verify/${id}`;
 }
 function isLocalFrontend() { return ["localhost", "127.0.0.1"].includes(location.hostname); }
+function isDemoChain() { return Number(config?.chainId) === 31337; }
 function toast(message, error = false) { const el = document.createElement("div"); el.className = `toast${error ? " error" : ""}`; el.textContent = message; $("#toastArea").append(el); setTimeout(() => el.remove(), 4200); }
 function friendly(error) {
   const m = error?.shortMessage || error?.reason || error?.message || "Transaction failed";
@@ -41,21 +44,50 @@ async function init() {
   if (!config.address || !config.abi?.length) { app.innerHTML = `<div class="notice danger">No deployment found. Start a local node and run the deploy script first.</div>`; return; }
   const localRpcHost = ["localhost", "127.0.0.1"].includes(location.hostname) ? "127.0.0.1" : location.hostname;
   const rpcUrl = localStorage.getItem("vaxpassRpc") || (Number(config.chainId) === 11155111 ? "https://ethereum-sepolia-rpc.publicnode.com" : `http://${localRpcHost}:8545`);
-  read = new ethers.Contract(config.address, config.abi, new ethers.JsonRpcProvider(rpcUrl));
+  rpcProvider = new ethers.JsonRpcProvider(rpcUrl);
+  read = new ethers.Contract(config.address, config.abi, rpcProvider);
   roleIds = {
     manufacturer: await read.MANUFACTURER_ROLE(), distributor: await read.DISTRIBUTOR_ROLE(),
     clinic: await read.CLINIC_ROLE(), logger: await read.LOGGER_ROLE(), regulator: await read.REGULATOR_ROLE()
   };
   $("#connectButton").addEventListener("click", connect);
   $("#menuButton").addEventListener("click", () => $("#nav").classList.toggle("open"));
+  mode = isDemoChain() ? (localStorage.getItem("vaxpassMode") || "demo") : "live";
+  if (mode === "demo") await activateDemoRole(localStorage.getItem("vaxpassDemoRole") || "regulator", false);
+  else updateModeControls();
   window.addEventListener("hashchange", render);
   bindEvents(); render();
+}
+
+function updateModeControls() {
+  const controls = $("#modeControls");
+  if (!controls) return;
+  if (!isDemoChain()) {
+    controls.innerHTML = `<span class="mode-pill live">LIVE WALLET</span>`;
+    return;
+  }
+  const roleOptions = DEMO_ROLES.map(key => `<option value="${key}" ${key === activeDemoRole ? "selected" : ""}>${DEMO_ROLE_LABELS[key]} · ${short(demoAddresses[key] || "")}</option>`).join("");
+  controls.innerHTML = `<div class="mode-toggle" role="group" aria-label="Application mode"><button class="mode-option ${mode === "demo" ? "active" : ""}" data-action="demo-mode">Demo Mode</button><button class="mode-option ${mode === "live" ? "active" : ""}" data-action="live-mode">Live Wallet</button></div>${mode === "demo" ? `<span class="mode-pill demo">DEMO MODE · LOCAL CHAIN</span><label class="role-switcher"><span class="sr-only">Active demo role</span><select id="demoRoleSelect" aria-label="Active demo role">${roleOptions}</select></label>` : ""}`;
+  $("#connectButton").textContent = mode === "demo" ? `${short(account)} · ${DEMO_ROLE_LABELS[activeDemoRole]}` : (account ? short(account) : "Connect wallet");
+}
+
+async function activateDemoRole(role, rerender = true) {
+  if (!isDemoChain() || !DEMO_ROLES.includes(role)) return;
+  mode = "demo"; activeDemoRole = role; localStorage.setItem("vaxpassMode", "demo"); localStorage.setItem("vaxpassDemoRole", role);
+  if (!Object.keys(demoSigners).length) for (const key of DEMO_ROLES) { demoSigners[key] = await rpcProvider.getSigner(DEMO_ROLES.indexOf(key)); demoAddresses[key] = await demoSigners[key].getAddress(); }
+  const signer = demoSigners[role]; account = await signer.getAddress(); write = read.connect(signer); activeRoles = [role]; updateModeControls();
+  if (rerender) await render();
+}
+
+async function activateLiveMode() {
+  mode = "live"; localStorage.setItem("vaxpassMode", "live"); write = null; account = null; activeRoles = []; updateModeControls();
+  if (window.ethereum) await connect(); else toast("Live Wallet mode needs MetaMask.", true);
 }
 
 async function connect() {
   if (!window.ethereum) return toast("MetaMask was not detected. Install its browser extension first.", true);
   try {
-    walletProvider = new ethers.BrowserProvider(window.ethereum);
+    mode = "live"; localStorage.setItem("vaxpassMode", "live"); walletProvider = new ethers.BrowserProvider(window.ethereum);
     await walletProvider.send("eth_requestAccounts", []);
     const network = await walletProvider.getNetwork();
     if (Number(network.chainId) !== Number(config.chainId)) {
@@ -64,7 +96,7 @@ async function connect() {
     const signer = await walletProvider.getSigner(); account = await signer.getAddress(); write = read.connect(signer);
     activeRoles = [];
     for (const [key, id] of Object.entries(roleIds)) if (await read.hasRole(id, account)) activeRoles.push(key);
-    $("#connectButton").textContent = `${short(account)}${activeRoles.length ? ` · ${ROLE_LABELS[activeRoles[0]] || "Regulator"}` : ""}`;
+    updateModeControls();
     toast("Wallet connected."); render();
   } catch (e) { toast(friendly(e), true); }
 }
@@ -146,6 +178,7 @@ async function renderAnalytics() {
 function drawTemperature(logs) { const c = $("#tempChart"), x = c.getContext("2d"), w = c.width, h = c.height; x.clearRect(0,0,w,h); x.strokeStyle="#dce8ed"; for(let i=0;i<5;i++){x.beginPath();x.moveTo(34,20+i*40);x.lineTo(w-12,20+i*40);x.stroke()} if(!logs.length){x.fillStyle="#607789";x.fillText("No temperature readings yet",w/2-65,h/2);return} const vals=logs.map(l=>Number(l.tempX10)/10), min=Math.min(...vals,0), max=Math.max(...vals,10), span=max-min||1; x.strokeStyle="#0f9b9d";x.lineWidth=3;x.beginPath();vals.forEach((v,i)=>{const px=38+i*(w-56)/Math.max(1,vals.length-1),py=h-28-(v-min)/(span)*170;i?x.lineTo(px,py):x.moveTo(px,py)});x.stroke();x.fillStyle="#0c4a6e";x.fillText(`${max.toFixed(1)} °C`,4,23);x.fillText(`${min.toFixed(1)} °C`,4,h-22); }
 function drawBars(values, labels) { const c=$("#barChart"),x=c.getContext("2d"),w=c.width,h=c.height,left=62,right=26,top=24,bottom=58,max=Math.max(...values,1),plotH=h-top-bottom,plotW=w-left-right,bw=plotW/values.length; x.clearRect(0,0,w,h); x.font="12px sans-serif"; x.strokeStyle="#dce8ed"; x.fillStyle="#607789"; for(let i=0;i<=4;i++){const y=top+plotH-(plotH*i/4); x.beginPath();x.moveTo(left,y);x.lineTo(w-right,y);x.stroke();x.fillText(String(Math.round(max*i/4)),8,y+4)} values.forEach((v,i)=>{const bh=v/max*plotH,px=left+i*bw+bw*.22; x.fillStyle=["#0c4a6e","#0f9b9d","#c23b52","#bd7411","#607789"][i];x.fillRect(px,top+plotH-bh,bw*.56,bh);x.fillStyle="#183146";x.font="700 13px sans-serif";x.fillText(String(v),px+(bw*.56/2)-4,top+plotH-bh-8);x.font="12px sans-serif";x.fillText(labels[i],px,h-24)}); }
 
-function bindEvents() { document.addEventListener("click", async e => { const action = e.target.dataset.action; if (!action) return; if (action === "connect") return connect(); if (action === "set-qr-url") { const value = prompt("Enter the frontend URL that your phone can reach, for example http://192.168.0.106:8080", localStorage.getItem("vaxpassFrontendUrl") || "http://192.168.0.106:8080"); if (!value) return; try { const url = new URL(value); if (!/^https?:$/.test(url.protocol)) throw new Error(); localStorage.setItem("vaxpassFrontendUrl", url.origin); toast("QR destination saved. Reloading passport…"); return render(); } catch { return toast("Enter a valid http:// or https:// frontend URL.", true); } } if (!requireWallet()) return; const id = Number(e.target.dataset.id); if (action === "accept") return tx(write.acceptCustody(id), "Custody accepted."); if (action === "confirm") return tx(write.confirmReceipt(id), "Receipt confirmation recorded."); if (action === "dispatch") { const a=prompt("Approved distributor wallet address:"); if(a && ethers.isAddress(a)) return tx(write.dispatchBatch(id,a),"Batch dispatched."); return a ? toast("Enter a valid wallet address.",true) : null; } if (action === "deliver") { const a=prompt("Approved clinic wallet address:"); if(a && ethers.isAddress(a)) return tx(write.deliverToClinic(id,a),"Clinic delivery set; await dual confirmation."); return a ? toast("Enter a valid wallet address.",true) : null; } if (action === "administer") { const p=prompt("Patient ID (hashed locally; never stored on-chain):"); if(!p) return; const hash=ethers.keccak256(ethers.toUtf8Bytes(p)); return tx(write.administerDose(id,hash),"Dose administered; only the hash was recorded."); } });
+function bindEvents() { document.addEventListener("click", async e => { const action = e.target.dataset.action; if (!action) return; if (action === "connect") return connect(); if (action === "demo-mode") return activateDemoRole(activeDemoRole); if (action === "live-mode") return activateLiveMode(); if (action === "set-qr-url") { const value = prompt("Enter the frontend URL that your phone can reach, for example http://192.168.0.106:8080", localStorage.getItem("vaxpassFrontendUrl") || "http://192.168.0.106:8080"); if (!value) return; try { const url = new URL(value); if (!/^https?:$/.test(url.protocol)) throw new Error(); localStorage.setItem("vaxpassFrontendUrl", url.origin); toast("QR destination saved. Reloading passport…"); return render(); } catch { return toast("Enter a valid http:// or https:// frontend URL.", true); } } if (!requireWallet()) return; const id = Number(e.target.dataset.id); if (action === "accept") return tx(write.acceptCustody(id), "Custody accepted."); if (action === "confirm") return tx(write.confirmReceipt(id), "Receipt confirmation recorded."); if (action === "dispatch") { const a=prompt("Approved distributor wallet address:"); if(a && ethers.isAddress(a)) return tx(write.dispatchBatch(id,a),"Batch dispatched."); return a ? toast("Enter a valid wallet address.",true) : null; } if (action === "deliver") { const a=prompt("Approved clinic wallet address:"); if(a && ethers.isAddress(a)) return tx(write.deliverToClinic(id,a),"Clinic delivery set; await dual confirmation."); return a ? toast("Enter a valid wallet address.",true) : null; } if (action === "administer") { const p=prompt("Patient ID (hashed locally; never stored on-chain):"); if(!p) return; const hash=ethers.keccak256(ethers.toUtf8Bytes(p)); return tx(write.administerDose(id,hash),"Dose administered; only the hash was recorded."); } });
+  document.addEventListener("change", e => { if (e.target.id === "demoRoleSelect") activateDemoRole(e.target.value); });
   document.addEventListener("submit", async e => { e.preventDefault(); const f=e.target; if(f.id === "verifyForm") return verify($("#verifyId").value); if(!requireWallet()) return; if(f.id === "roleForm"){const key=$("#requestedRole").value;localStorage.setItem("vaxpassOrg",$("#orgName").value);return tx(write.requestRole(roleIds[key]),"Role request submitted for regulator approval.");} if(f.id === "entityForm"){const a=$("#entityAddress").value.trim(),r=roleIds[$("#entityRole").value],op=e.submitter?.value;if(!ethers.isAddress(a))return toast("Enter a valid wallet address.",true);return tx(op==="revoke"?write.revokeEntity(a,r):write.approveEntity(a,r),op==="revoke"?"Role revoked.":"Entity approved.");} if(f.id === "recallForm") return tx(write.recallBatch($("#recallId").value,$("#recallReason").value),"Batch recalled."); if(f.id === "batchForm"){const expiry=Math.floor(new Date($("#printedExpiry").value).getTime()/1000); if(!expiry)return toast("Choose a valid expiry date.",true); return tx(write.registerBatch($("#vaccineName").value,$("#lotNumber").value,$("#doses").value,expiry,Math.round(Number($("#minTemp").value)*10),Math.round(Number($("#maxTemp").value)*10),$("#budget").value,$("#cid").value),"Batch registered.");} }); }
 init().catch(e => { app.innerHTML = `<div class="notice danger">Startup error: ${escapeHtml(friendly(e))}</div>`; });
