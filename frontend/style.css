@@ -2023,19 +2023,76 @@ tbody tr:hover {
   padding: 12px 18px;
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
-  max-width: 360px;
+  max-width: 380px;
   font-size: 0.86rem;
   font-weight: 600;
   line-height: 1.4;
   animation: toastIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-left: 4px solid var(--teal);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+}
+
+.toast.success {
+  background: #0f2d3a;
+  border-left-color: var(--safe);
+}
+
+.toast.success i {
+  color: #5ce3b4;
+  font-size: 1.15rem;
+  flex-shrink: 0;
 }
 
 .toast.error {
-  background: #9d1c37;
+  background: #4a1520;
+  border-left-color: var(--danger);
+}
+
+.toast.error i {
+  color: #fca5b7;
+  font-size: 1.15rem;
+  flex-shrink: 0;
+}
+
+.toast.warning {
+  background: #3e2608;
+  border-left-color: var(--warn);
+}
+
+.toast.warning i {
+  color: #ffd68a;
+  font-size: 1.15rem;
+  flex-shrink: 0;
+}
+
+.toast.pending {
+  background: #0a2d42;
+  border-left-color: var(--teal);
+}
+
+.toast.pending i {
+  color: #7debe3;
+  font-size: 1.15rem;
+  flex-shrink: 0;
+}
+
+.toast i.spin {
+  animation: toastSpinner 0.85s linear infinite;
+}
+
+@keyframes toastSpinner {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+body.tx-busy button[data-action],
+body.tx-busy a[data-action] {
+  pointer-events: none !important;
+  opacity: 0.65 !important;
+  cursor: wait !important;
 }
 
 @keyframes toastIn {

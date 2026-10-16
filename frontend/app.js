@@ -71,20 +71,47 @@ function isLocalFrontend() {
   return ["localhost", "127.0.0.1"].includes(location.hostname); 
 }
 
-function toast(message, error = false) { 
+function toast(message, type = "success") { 
   const el = document.createElement("div"); 
-  el.className = `toast${error ? " error" : ""}`; 
+  const isErr = type === true || type === "error";
+  const isPending = type === "pending";
+  const isWarn = type === "warning";
+  const modeClass = isErr ? "error" : isPending ? "pending" : isWarn ? "warning" : "success";
+  const icon = isErr 
+    ? "hgi-cancel-circle" 
+    : isPending 
+      ? "hgi-loading-03 spin" 
+      : isWarn 
+        ? "hgi-alert-triangle" 
+        : "hgi-checkmark-circle-02";
+  el.className = `toast ${modeClass}`; 
   el.innerHTML = `
-    <i class="hgi-stroke ${error ? 'hgi-alert-circle' : 'hgi-checkmark-circle-02'}"></i>
+    <i class="hgi-stroke ${icon}"></i>
     <span>${escapeHtml(message)}</span>
   `; 
   $("#toastArea").append(el); 
-  setTimeout(() => el.remove(), 4200); 
+  if (!isPending) {
+    setTimeout(() => el.remove(), 4500); 
+  }
+  return el;
+}
+
+function dismissPendingToasts() {
+  document.querySelectorAll("#toastArea .toast.pending").forEach(el => el.remove());
+}
+
+function isUserRejection(error) {
+  if (!error) return false;
+  if (error.code === 4001 || error.code === "ACTION_REJECTED") return true;
+  if (error.info?.error?.code === 4001) return true;
+  const msg = String(error.shortMessage || error.reason || error.info?.error?.message || error.message || "");
+  return /rejected|denied|user rejected|ACTION_REJECTED/i.test(msg);
 }
 
 function friendly(error) {
+  if (isUserRejection(error)) return "Transaction rejected in MetaMask. No changes were made on-chain.";
   const m = error?.shortMessage || error?.reason || error?.message || "Transaction failed";
-  return /user rejected|ACTION_REJECTED/i.test(m) ? "Transaction was cancelled in MetaMask." : m.replace(/^execution reverted: /, "");
+  return m.replace(/^execution reverted: /, "");
 }
 
 function errorText(error) { 
@@ -92,8 +119,8 @@ function errorText(error) {
 }
 
 function contractEnforcement(error) {
+  if (isUserRejection(error)) return null;
   const text = errorText(error);
-  if (/user rejected|ACTION_REJECTED/i.test(text)) return null;
   const rules = [
     [/spoiled/i, "This batch is spoiled and cannot be used."],
     [/recalled|recall/i, "This batch was already recalled or cannot be recalled in its current state."],
@@ -111,8 +138,12 @@ function contractEnforcement(error) {
 }
 
 function showShield(error) { 
+  dismissPendingToasts();
+  if (isUserRejection(error)) {
+    return toast("Transaction rejected in MetaMask. No changes were made on-chain.", "error"); 
+  }
   const card = contractEnforcement(error); 
-  if (!card) return toast("Transaction cancelled in MetaMask.", false); 
+  if (!card) return toast("Transaction cancelled in MetaMask. No changes were made.", "error"); 
   $("#shieldArea").innerHTML = `
     <div class="shield-card">
       <div class="shield-icon"><i class="hgi-stroke hgi-alert-triangle"></i></div>
@@ -380,15 +411,42 @@ function promptAddressModal({ title, subtitle, roleLabel, iconType = "distributo
         }
       });
 
-      form.addEventListener("submit", (e) => {
+      form.addEventListener("submit", async (e) => {
         e.preventDefault();
         const val = input.value.trim();
-        if (ethers.isAddress(val)) {
-          resolve(val);
-        } else {
+        if (!ethers.isAddress(val)) {
           validate();
           input.focus();
+          return;
         }
+
+        const confirmBtn = $("#modalConfirmBtn");
+        if (confirmBtn) {
+          confirmBtn.disabled = true;
+          confirmBtn.innerHTML = `<i class="hgi-stroke hgi-loading-03 spin"></i> Verifying on-chain…`;
+        }
+
+        try {
+          const roleKey = roleLabel.toLowerCase();
+          const targetRoleId = roleIds[roleKey];
+          if (targetRoleId && read) {
+            const hasApprovedRole = await read.hasRole(targetRoleId, val);
+            if (!hasApprovedRole) {
+              feedback.className = "validation-feedback invalid";
+              feedback.innerHTML = `<i class="hgi-stroke hgi-alert-circle"></i> <span>This wallet does not have the on-chain approved ${escapeHtml(roleLabel)} role.</span>`;
+              if (confirmBtn) {
+                confirmBtn.disabled = false;
+                confirmBtn.innerHTML = "Confirm Address";
+              }
+              input.focus();
+              return;
+            }
+          }
+        } catch {
+          // If RPC check fails, continue
+        }
+
+        resolve(val);
       });
     }
   });
@@ -683,11 +741,20 @@ async function handleAccountChanged(accounts) {
   if (nextRole) location.hash = `#/${nextRole === "logger" ? "sensor" : nextRole}`; 
 }
 
+let isTxPending = false;
+
 async function tx(promise, success = "Transaction confirmed.", functionName = "Transaction", rerender = true) { 
+  if (isTxPending) {
+    toast("Another transaction is currently processing. Please finish or cancel it first.", "warning");
+    return null;
+  }
+  isTxPending = true;
+  document.body.classList.add("tx-busy");
+  const pendingToast = toast("Waiting for MetaMask signature & blockchain confirmation…", "pending"); 
   try { 
-    toast("Pending: waiting for blockchain confirmation…"); 
     const t = await promise; 
     const receipt = await t.wait(); 
+    pendingToast?.remove();
     lastTransaction = { 
       hash: receipt.hash, 
       block: receipt.blockNumber, 
@@ -697,13 +764,18 @@ async function tx(promise, success = "Transaction confirmed.", functionName = "T
       role: ROLE_LABELS[activeRoles[0]] || "Wallet" 
     }; 
     updateTxDrawer(); 
-    toast(`${success} ${short(receipt.hash)} · block ${receipt.blockNumber}`); 
+    toast(`${success} ${short(receipt.hash)} · block ${receipt.blockNumber}`, "success"); 
     if (rerender) await render(); 
     return receipt; 
   } catch (e) { 
+    pendingToast?.remove();
     showShield(e); 
+    if (rerender) await render(); 
     return null; 
-  } 
+  } finally {
+    isTxPending = false;
+    document.body.classList.remove("tx-busy");
+  }
 }
 
 async function batches() {
@@ -1056,17 +1128,33 @@ async function renderDistributor() {
       if (pending.toLowerCase() === account.toLowerCase()) incoming.push(b); 
       if (b.custodian.toLowerCase() === account.toLowerCase()) { 
         b.distributorConfirmed = await read.distributorConfirmed(b.id); 
+        b.clinicConfirmed = await read.clinicConfirmed(b.id);
         outgoing.push(b); 
       } 
     }
   }
 
   const incomingActions = b => `<button class="button teal" data-action="accept" data-id="${b.id}"><i class="hgi-stroke hgi-checkmark-circle-02"></i> Accept custody</button>`;
-  const outgoingActions = b => Number(b.status) === 1 && !b.clinic.match(/^0x0+$/) && !b.distributorConfirmed 
-    ? `<button class="button teal" data-action="confirm" data-id="${b.id}"><i class="hgi-stroke hgi-checkmark-circle-02"></i> Confirm handover</button>` 
-    : Number(b.status) === 1 && b.clinic.match(/^0x0+$/) 
-      ? `<button class="button teal" data-action="deliver" data-id="${b.id}"><i class="hgi-stroke hgi-hospital-01"></i> Deliver to clinic</button>` 
-      : `<button class="button light" disabled title="Distributor handover is already confirmed or this batch is not awaiting action."><i class="hgi-stroke hgi-checkmark-circle-02"></i> Handover confirmed</button>`;
+  const outgoingActions = b => {
+    const isTransit = Number(b.status) === 1;
+    const hasClinic = !b.clinic.match(/^0x0+$/);
+    if (isTransit && !hasClinic) {
+      return `<button class="button teal" data-action="deliver" data-id="${b.id}"><i class="hgi-stroke hgi-hospital-01"></i> Deliver to clinic</button>`;
+    }
+    if (isTransit && hasClinic) {
+      if (!b.distributorConfirmed) {
+        return `<button class="button teal" data-action="confirm" data-id="${b.id}"><i class="hgi-stroke hgi-checkmark-circle-02"></i> Confirm handover</button>`;
+      }
+      if (b.distributorConfirmed && !b.clinicConfirmed) {
+        return `<button class="button light" disabled title="You have confirmed handover on-chain. Waiting for destination clinic to confirm receipt."><i class="hgi-stroke hgi-clock-01"></i> Awaiting clinic confirmation</button>`;
+      }
+      return `<span class="badge safe"><i class="hgi-stroke hgi-checkmark-circle-02"></i> Handover complete</span>`;
+    }
+    if (Number(b.status) === 2) {
+      return `<span class="badge safe"><i class="hgi-stroke hgi-checkmark-circle-02"></i> Delivered to clinic</span>`;
+    }
+    return `<button class="button light" disabled title="No action pending for this batch."><i class="hgi-stroke hgi-information-circle"></i> In custody</button>`;
+  };
 
   app.innerHTML = page("Distributor workspace", "Accept shipments, identify the destination clinic, and confirm dual handover.", `
     <div class="tabs">
@@ -1096,11 +1184,23 @@ async function renderDistributor() {
 
 async function renderClinic() {
   const list = await batches(); 
-  const relevant = account ? list.filter(b => b.clinic.toLowerCase() === account.toLowerCase() || b.custodian.toLowerCase() === account.toLowerCase()) : [];
+  const relevant = [];
+  if (account) {
+    for (const b of list) {
+      if (b.clinic.toLowerCase() === account.toLowerCase() || b.custodian.toLowerCase() === account.toLowerCase()) {
+        b.distributorConfirmed = await read.distributorConfirmed(b.id);
+        b.clinicConfirmed = await read.clinicConfirmed(b.id);
+        relevant.push(b);
+      }
+    }
+  }
   
   const actions = b => { 
     if (Number(b.status) === 1 && b.clinic.toLowerCase() === account?.toLowerCase()) {
-      return `<button class="button teal" data-action="confirm" data-id="${b.id}"><i class="hgi-stroke hgi-checkmark-circle-02"></i> Confirm receipt</button>`; 
+      if (!b.clinicConfirmed) {
+        return `<button class="button teal" data-action="confirm" data-id="${b.id}"><i class="hgi-stroke hgi-checkmark-circle-02"></i> Confirm receipt</button>`; 
+      }
+      return `<button class="button light" disabled title="Clinic receipt confirmed on-chain. Waiting for distributor to confirm handover."><i class="hgi-stroke hgi-clock-01"></i> Receipt confirmed · Awaiting distributor</button>`;
     }
     if ([2, 3].includes(Number(b.status)) && b.custodian.toLowerCase() === account?.toLowerCase()) {
       return `<button class="button teal" data-action="administer" data-id="${b.id}"><i class="hgi-stroke hgi-injection"></i> Administer dose</button>`; 
