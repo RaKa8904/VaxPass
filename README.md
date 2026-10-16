@@ -18,6 +18,8 @@ VaxPass is a college mini-project demonstrating a blockchain-based cold-chain va
 
 ## Setup and local run
 
+For an easier Windows startup, double-click `start-vaxpass.bat` in the project folder. It opens the Hardhat node, deploys and seeds the demo contract, and starts the frontend server in separate PowerShell windows. Keep those windows open while using the application.
+
 ```bash
 npm install
 npx hardhat compile
