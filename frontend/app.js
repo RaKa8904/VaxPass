@@ -731,6 +731,8 @@ async function connect(request = true) {
       toast(`Wrong network: switch MetaMask to chain ID ${config.chainId}.`, true); 
       return;
     }
+    const signer = await walletProvider.getSigner(); 
+    account = await signer.getAddress(); 
     const baseWrite = read.connect(signer);
     write = new Proxy(baseWrite, {
       get(target, prop, receiver) {
