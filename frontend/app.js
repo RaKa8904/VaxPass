@@ -115,6 +115,7 @@ async function render() {
   try {
     const parts = location.hash.replace(/^#\/?/, "").split("/"); const route = parts[0] || "";
     $("#nav").classList.remove("open");
+    document.querySelectorAll("#nav a").forEach(link => { const target = link.getAttribute("href").replace(/^#\/?/, ""); link.classList.toggle("active", target === route || (!route && !target)); });
     const requiredRole = { regulator: "regulator", manufacturer: "manufacturer", distributor: "distributor", clinic: "clinic", sensor: "logger" }[route];
     if (requiredRole && !activeRoles.includes(requiredRole)) return renderAccessDenied(requiredRole);
     if (route === "register") await renderRegister(); else if (route === "regulator") await renderRegulator();
@@ -123,7 +124,7 @@ async function render() {
     else if (route === "verify") await renderVerify(Number(parts[1])); else if (route === "analytics") await renderAnalytics(); else await renderHome();
   } catch (e) { app.innerHTML = `<div class="notice danger">Unable to read the chain: ${escapeHtml(friendly(e))}</div>`; }
 }
-function renderAccessDenied(role) { const label = ROLE_LABELS[role] || "required"; app.innerHTML = page("Access restricted", `This workspace requires the approved ${label} role.`, `<div class="notice danger"><b>RBAC enforcement</b><p>Connected account: ${short(account)}. Switch MetaMask to an approved ${label} account to continue.</p></div><div class="actions"><button class="button teal" data-action="connect">Recheck MetaMask account</button><a class="button light" href="#/">Return home</a></div>`); }
+function renderAccessDenied(role) { const label = ROLE_LABELS[role] || "required"; const localHint = Number(config.chainId) === 31337 && role === "logger" ? `<p><b>Local seeded Logger:</b> Hardhat account #4, ending in <span class="address">…6A65</span>. A MetaMask account label does not grant an on-chain role.</p>` : ""; app.innerHTML = page("Access restricted", `This workspace requires the approved ${label} role.`, `<div class="notice danger"><b>RBAC enforcement</b><p>Connected account: ${short(account)}. This address does not have the on-chain ${label} role.</p>${localHint}</div><div class="actions"><button class="button teal" data-action="connect">Recheck MetaMask account</button><a class="button light" href="#/register">Request a role</a><a class="button light" href="#/">Return home</a></div>`); }
 
 async function guideChecks() {
   const list = await batches(), stats = await read.getStats(); const first = list.find(b => Number(b.id) === 1), second = list.find(b => Number(b.id) === 2); let firstLogs = [];
