@@ -23,7 +23,7 @@ const SENSOR_READINGS = {
   breach: [[220, 20], [250, 20]] 
 };
 
-let config, read, walletProvider, write, account, activeRoles = [], roleIds = {}, rpcProvider;
+let config, read, walletProvider, write, writeContract, account, activeRoles = [], roleIds = {}, rpcProvider;
 let sensorFeed = [], selectedSensorBatch = 1, lastTransaction = null, livePoller = null, activity = [], checkpointId = null;
 let mode = "live", activeDemoRole = "manufacturer", distributorTab = "incoming";
 
@@ -467,8 +467,16 @@ function promptAddressModal({ title, subtitle, roleLabel, iconType = "distributo
               return;
             }
           }
-        } catch {
-          // If RPC check fails, continue
+        } catch (error) {
+          feedback.className = "validation-feedback invalid";
+          feedback.innerHTML = `<i class="hgi-stroke hgi-alert-circle"></i> <span>Unable to verify this wallet's approved role on the configured network.</span>`;
+          if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = "Confirm Address";
+          }
+          showShield(error);
+          input.focus();
+          return;
         }
 
         resolve(val);
@@ -713,7 +721,7 @@ function bindPolishEvents() {
     if (action === "request-role") { 
       if (!requireWallet()) return; 
       const role = e.target.closest("[data-role]")?.dataset?.role;
-      return tx(write.requestRole(roleIds[role]), "Role request submitted.", "requestRole"); 
+      return tx(() => sendWithPreflight("requestRole", [roleIds[role]]), "Role request submitted.", "requestRole");
     } 
   }); 
   document.addEventListener("change", e => { 
@@ -733,29 +741,8 @@ async function connect(request = true) {
     }
     const signer = await walletProvider.getSigner(); 
     account = await signer.getAddress(); 
-    const baseWrite = read.connect(signer);
-    write = new Proxy(baseWrite, {
-      get(target, prop, receiver) {
-        const orig = Reflect.get(target, prop, receiver);
-        if (typeof orig === "function" && typeof prop === "string" && !prop.startsWith("_")) {
-          return async function (...args) {
-            const lastArg = args[args.length - 1];
-            const hasOverrides = lastArg && typeof lastArg === "object" && ("gasLimit" in lastArg || "value" in lastArg);
-            if (!hasOverrides && target[prop]?.estimateGas) {
-              try {
-                const est = await target[prop].estimateGas(...args);
-                const gasLimit = (est * 140n) / 100n;
-                return orig.apply(target, [...args, { gasLimit }]);
-              } catch (err) {
-                // If estimateGas fails, proceed with original call so contract revert error displays
-              }
-            }
-            return orig.apply(target, args);
-          };
-        }
-        return orig;
-      }
-    });
+    writeContract = read.connect(signer);
+    write = writeContract;
     activeRoles = [];
     for (const [key, id] of Object.entries(roleIds)) {
       if (await read.hasRole(id, account)) activeRoles.push(key);
@@ -778,6 +765,7 @@ async function handleAccountChanged(accounts) {
   if (!accounts.length) { 
     account = null; 
     write = null; 
+    writeContract = null;
     activeRoles = []; 
     updateModeControls(); 
     location.hash = "#/"; 
@@ -790,6 +778,70 @@ async function handleAccountChanged(accounts) {
 
 let isTxPending = false;
 
+async function sendWithPreflight(method, args = []) {
+  if (!walletProvider || !account) {
+    throw new Error("Wallet is not connected to the configured contract.");
+  }
+
+  const walletNetwork = await walletProvider.getNetwork();
+  if (Number(walletNetwork.chainId) !== Number(config.chainId)) {
+    throw new Error(`MetaMask is on chain ${walletNetwork.chainId}; switch to chain ${config.chainId}.`);
+  }
+
+  const selectedAccounts = await walletProvider.send("eth_accounts", []);
+  const selectedAccount = selectedAccounts.find(a => a.toLowerCase() === account.toLowerCase());
+  if (!selectedAccount) {
+    throw new Error("MetaMask account changed. Reconnect the selected account and try again.");
+  }
+
+  const signer = await walletProvider.getSigner(selectedAccount);
+  const contractMethod = read.connect(signer).getFunction(method);
+  await contractMethod.staticCall(...args);
+  const gasEstimate = await contractMethod.estimateGas(...args);
+  const gasLimit = (gasEstimate * 120n) / 100n;
+  return contractMethod(...args, { gasLimit });
+}
+
+async function administerDose(id, patientHash) {
+  if (!walletProvider || !account) {
+    throw new Error("Connect the clinic wallet before administering a dose.");
+  }
+
+  const selectedAccounts = await walletProvider.send("eth_accounts", []);
+  const selectedAccount = selectedAccounts.find(a => a.toLowerCase() === account.toLowerCase());
+  if (!selectedAccount) {
+    throw new Error("MetaMask account changed. Reconnect the selected clinic account and try again.");
+  }
+
+  const clinicRole = roleIds.clinic;
+  if (!(await read.hasRole(clinicRole, selectedAccount))) {
+    throw new Error("The connected wallet is not an approved clinic.");
+  }
+
+  const batch = await read.getBatch(id);
+  if (batch.custodian.toLowerCase() !== selectedAccount.toLowerCase()) {
+    throw new Error("This clinic is not the current on-chain custodian of this batch.");
+  }
+  if (![2, 3].includes(Number(batch.status))) {
+    throw new Error("The batch must be delivered and fully confirmed before use.");
+  }
+  if (Number(batch.dosesRemaining) < 1) {
+    throw new Error("This batch has no doses remaining.");
+  }
+  if (Number(batch.effectiveExpiry) <= Math.floor(Date.now() / 1000)) {
+    throw new Error("This batch has expired.");
+  }
+
+  // Bind both simulation and submission to the current MetaMask signer.
+  const signer = await walletProvider.getSigner(selectedAccount);
+  const clinicContract = read.connect(signer);
+  const administer = clinicContract.getFunction("administerDose");
+  await administer.staticCall(id, patientHash);
+  const gasEstimate = await administer.estimateGas(id, patientHash);
+  const gasLimit = (gasEstimate * 120n) / 100n;
+  return administer(id, patientHash, { gasLimit });
+}
+
 async function tx(promiseOrFn, success = "Transaction confirmed.", functionName = "Transaction", rerender = true) { 
   if (isTxPending) {
     toast("Another transaction is currently processing. Please finish or cancel it first.", "warning");
@@ -799,10 +851,20 @@ async function tx(promiseOrFn, success = "Transaction confirmed.", functionName 
   document.body.classList.add("tx-busy");
   const pendingToast = toast("Waiting for MetaMask signature & blockchain confirmation…", "pending"); 
   try { 
+    const submittingAccount = account;
     const t = typeof promiseOrFn === "function" ? await promiseOrFn() : await promiseOrFn; 
-    const receipt = await t.wait(); 
-    if (receipt && Number(receipt.status) === 0) {
+    if (!t?.hash) {
+      throw new Error("MetaMask did not return a transaction hash.");
+    }
+    const receipt = await t.wait(1);
+    const verifiedReceipt = await rpcProvider.waitForTransaction(t.hash, 1, 120000);
+    if (!receipt || !verifiedReceipt || receipt.hash.toLowerCase() !== t.hash.toLowerCase() ||
+        verifiedReceipt.hash.toLowerCase() !== t.hash.toLowerCase() ||
+        Number(receipt.status) !== 1 || Number(verifiedReceipt.status) !== 1) {
       throw new Error("Transaction execution reverted on-chain.");
+    }
+    if (t.from && t.from.toLowerCase() !== submittingAccount.toLowerCase()) {
+      throw new Error("MetaMask changed accounts while the transaction was being submitted.");
     }
     pendingToast?.remove();
     lastTransaction = { 
@@ -810,7 +872,7 @@ async function tx(promiseOrFn, success = "Transaction confirmed.", functionName 
       block: receipt.blockNumber, 
       gas: receipt.gasUsed?.toString() || "—", 
       functionName, 
-      from: account, 
+      from: t.from || submittingAccount,
       role: ROLE_LABELS[activeRoles[0]] || "Wallet" 
     }; 
     updateTxDrawer(); 
@@ -1368,7 +1430,7 @@ async function sendSensorReadings(id, readings) {
   for (const [tempX10, durationMins] of readings) {
     sensorFeed.push({ temp: (tempX10 / 10).toFixed(1), duration: durationMins, state: "pending" }); 
     await renderSensorConsole(id);
-    const receipt = await tx(write.logTemperature(id, tempX10, durationMins), "Telemetry reading recorded.", "logTemperature", false); 
+    const receipt = await tx(() => sendWithPreflight("logTemperature", [id, tempX10, durationMins]), "Telemetry reading recorded.", "logTemperature", false);
     sensorFeed[sensorFeed.length - 1].state = receipt ? "confirmed" : "failed";
     await renderSensorConsole(id);
   }
@@ -1832,7 +1894,7 @@ function bindEvents() {
     } 
 
     if (action === "mark-expired") {
-      return tx(write.markExpired(Number(actionTarget.dataset.id)), "Batch marked expired.", "markExpired"); 
+      return tx(() => sendWithPreflight("markExpired", [Number(actionTarget.dataset.id)]), "Batch marked expired.", "markExpired");
     }
 
     if (action === "sensor-mode") {
@@ -1863,11 +1925,11 @@ function bindEvents() {
     const id = Number(actionTarget.dataset.id); 
 
     if (action === "accept") {
-      return tx(() => write.acceptCustody(id), "Custody accepted.", "acceptCustody"); 
+      return tx(() => sendWithPreflight("acceptCustody", [id]), "Custody accepted.", "acceptCustody");
     }
 
     if (action === "confirm") {
-      return tx(() => write.confirmReceipt(id), "Receipt confirmation recorded.", "confirmReceipt"); 
+      return tx(() => sendWithPreflight("confirmReceipt", [id]), "Receipt confirmation recorded.", "confirmReceipt");
     }
 
     if (action === "dispatch") { 
@@ -1878,7 +1940,11 @@ function bindEvents() {
         iconType: "distributor"
       });
       if (address) {
-        return tx(() => write.dispatchBatch(id, address), "Batch dispatched to distributor.", "dispatchBatch"); 
+        return tx(
+          () => sendWithPreflight("dispatchBatch", [id, address]),
+          "Batch dispatched to distributor.",
+          "dispatchBatch"
+        );
       }
       return;
     } 
@@ -1891,7 +1957,7 @@ function bindEvents() {
         iconType: "clinic"
       });
       if (address) {
-        return tx(() => write.deliverToClinic(id, address), "Clinic delivery destination set; await dual confirmation.", "deliverToClinic"); 
+        return tx(() => sendWithPreflight("deliverToClinic", [id, address]), "Clinic delivery destination set; await dual confirmation.", "deliverToClinic");
       }
       return;
     } 
@@ -1900,7 +1966,11 @@ function bindEvents() {
       const patientId = await promptPatientModal({ batchId: id });
       if (!patientId) return;
       const hash = ethers.keccak256(ethers.toUtf8Bytes(patientId)); 
-      return tx(() => write.administerDose(id, hash), "Dose administered; only the cryptographic hash was recorded.", "administerDose"); 
+      return tx(
+        () => administerDose(id, hash),
+        "Dose administered; only the cryptographic hash was recorded.",
+        "administerDose"
+      );
     } 
   });
 
@@ -1922,7 +1992,7 @@ function bindEvents() {
     if (f.id === "roleForm") {
       const key = $("#requestedRole").value;
       localStorage.setItem("vaxpassOrg", $("#orgName").value);
-      return tx(write.requestRole(roleIds[key]), "Role request submitted for regulator approval.", "requestRole");
+      return tx(() => sendWithPreflight("requestRole", [roleIds[key]]), "Role request submitted for regulator approval.", "requestRole");
     } 
 
     if (f.id === "entityForm") {
@@ -1931,21 +2001,21 @@ function bindEvents() {
       const op = e.submitter?.value;
       if (!ethers.isAddress(a)) return toast("Enter a valid Ethereum wallet address.", true);
       return tx(
-        op === "revoke" ? write.revokeEntity(a, r) : write.approveEntity(a, r),
+        () => sendWithPreflight(op === "revoke" ? "revokeEntity" : "approveEntity", [a, r]),
         op === "revoke" ? "Role revoked on-chain." : "Entity approved on-chain.",
         op === "revoke" ? "revokeEntity" : "approveEntity"
       );
     } 
 
     if (f.id === "recallForm") {
-      return tx(write.recallBatch($("#recallId").value, $("#recallReason").value), "Batch recalled on-chain.", "recallBatch");
+      return tx(() => sendWithPreflight("recallBatch", [$("#recallId").value, $("#recallReason").value]), "Batch recalled on-chain.", "recallBatch");
     } 
 
     if (f.id === "batchForm") {
       const expiry = Math.floor(new Date($("#printedExpiry").value).getTime() / 1000); 
       if (!expiry) return toast("Choose a valid expiry date.", true); 
       return tx(
-        write.registerBatch(
+        () => sendWithPreflight("registerBatch", [
           $("#vaccineName").value,
           $("#lotNumber").value,
           $("#doses").value,
@@ -1954,7 +2024,7 @@ function bindEvents() {
           Math.round(Number($("#maxTemp").value) * 10),
           $("#budget").value,
           $("#cid").value
-        ),
+        ]),
         "Batch registered on Ethereum.",
         "registerBatch"
       );
