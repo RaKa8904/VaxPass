@@ -4,3 +4,4 @@ cache/
 .env
 .agents/
 skills-lock.json
+~$*

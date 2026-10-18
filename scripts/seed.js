@@ -10,7 +10,19 @@ async function approve(vax, regulator, account, role, label) {
 
 async function main() {
   const [regulator, manufacturer, distributor, clinic, logger] = await ethers.getSigners();
-  const address = require("../frontend/contract.json").address;
+  const contractConfig = require("../frontend/contract.json");
+  const address = contractConfig?.address;
+  if (!address) {
+    console.error("ERROR: No contract address found in frontend/contract.json.");
+    console.error("Please run 'npm run deploy:local' first before seeding demo data.");
+    process.exit(1);
+  }
+  const code = await ethers.provider.getCode(address);
+  if (!code || code === "0x") {
+    console.error(`ERROR: No contract deployed at address ${address} on this blockchain.`);
+    console.error("Please run 'npm run deploy:local' first to deploy the contract on the current node.");
+    process.exit(1);
+  }
   const vax = await ethers.getContractAt("VaxPass", address);
   await approve(vax, regulator, manufacturer, await vax.MANUFACTURER_ROLE(), "manufacturer");
   await approve(vax, regulator, distributor, await vax.DISTRIBUTOR_ROLE(), "distributor");

@@ -117,7 +117,7 @@
 
 ### Option A: One-Click Windows Launch (Recommended)
 
-Double-click `start-vaxpass.bat` in the project root directory.
+Double-click **`start.bat`** (or `start-vaxpass.bat`, or run `npm start`) in the project root directory.
 
 The batch script will:
 1. Launch the local Hardhat blockchain node in a separate window.
@@ -343,7 +343,8 @@ VaxPass/
 ├── test/
 │   └── VaxPass.test.js         # 13 comprehensive Chai/Mocha smart contract integration tests
 ├── build_vaxpass_document.py   # Python docx generator for project documentation and report guide
-├── start-vaxpass.bat           # 1-click Windows runner (starts node, deploys, seeds, launches UI)
+├── start.bat                   # 1-click Windows runner (starts node, deploys, seeds, launches UI)
+├── start-vaxpass.bat           # Startup wrapper (delegates to start.bat)
 ├── hardhat.config.js           # Hardhat network, compiler optimizer, and chain configuration
 ├── package.json                # Project dependencies, scripts, and dev packages
 └── README.md                   # Comprehensive project documentation and guides
