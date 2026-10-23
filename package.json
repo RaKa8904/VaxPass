@@ -9,10 +9,12 @@
     "start": "start.bat",
     "node": "hardhat node --hostname 0.0.0.0",
     "deploy:local": "hardhat run scripts/deploy.js --network localhost",
+    "deploy:upgradeable": "hardhat run scripts/deploy-upgradeable.js --network localhost",
     "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia",
     "seed:local": "hardhat run scripts/seed.js --network localhost",
     "seed:sepolia": "hardhat run scripts/seed.js --network sepolia",
-    "sensor:local": "hardhat run scripts/simulate-sensor.js --network localhost"
+    "sensor:local": "hardhat run scripts/simulate-sensor.js --network localhost",
+    "test:phase1": "hardhat test test/VaxPassUpgradeable.test.js"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "2.0.0",
@@ -23,6 +25,7 @@
     "hardhat": "2.17.4"
   },
   "dependencies": {
-    "@openzeppelin/contracts": "^5.0.2"
+    "@openzeppelin/contracts": "^5.0.2",
+    "@openzeppelin/contracts-upgradeable": "^5.0.2"
   }
 }

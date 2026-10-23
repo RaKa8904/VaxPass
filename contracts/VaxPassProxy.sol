@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+
+/**
+ * @title VaxPassProxy
+ * @notice Standard ERC1967Proxy wrapper ensuring the proxy artifact is compiled and available to deployment scripts.
+ */
+contract VaxPassProxy is ERC1967Proxy {
+    constructor(address implementation, bytes memory _data) payable ERC1967Proxy(implementation, _data) {}
+}
