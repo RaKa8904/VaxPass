@@ -240,5 +240,205 @@ describe("VaxPassUpgradeable (Phase 1 Enterprise Architecture)", function () {
       expect(batch.status).to.equal(Status.DEPLETED);
     });
   });
-});
 
+  describe("4. Hardware-Authenticated Telemetry (EIP-712 IoT Verification)", function () {
+    const { signTelemetry, createReadingPayload } = require("../frontend/hardware-enclave");
+    let loggerSigner, proxyAddress, chainId;
+
+    beforeEach(async function () {
+      loggerSigner = outsider; // assign signer for hardware secure element tests
+      await approveRole(manufacturer, roles.manufacturer);
+      await approveRole(carrier1, roles.distributor);
+      await approveRole(loggerSigner, roles.logger);
+
+      proxyAddress = await vax.getAddress();
+      chainId = Number((await ethers.provider.getNetwork()).chainId);
+
+      const now = await time.latest();
+      await vax.connect(manufacturer).registerBatch(
+        "PfizerColdVax",
+        "LOT-IOT-01",
+        500,
+        now + 120 * DAY,
+        20,
+        80,
+        20, // 20-minute excursion budget
+        "QmTelemetryCID"
+      );
+
+      // Dispatch to carrier1 so batch is in transitable status
+      await vax.connect(manufacturer).dispatchTransfer(1, carrier1.address, "CHBSL", "Shipped via cold truck");
+    });
+
+    it("accepts valid in-range telemetry from an authorized hardware sensor", async function () {
+      const now = await time.latest();
+      const currentNonce = await vax.sensorNonces(loggerSigner.address);
+      expect(currentNonce).to.equal(0n);
+
+      const reading = createReadingPayload({
+        batchId: 1,
+        tempCelsius: 4.5, // within 2.0 - 8.0 range
+        durationMins: 5,
+        nonce: currentNonce,
+        timestamp: now
+      });
+
+      const { signature } = await signTelemetry(loggerSigner, proxyAddress, chainId, reading);
+
+      await expect(vax.connect(loggerSigner).submitSignedTelemetry(reading, signature))
+        .to.emit(vax, "TelemetryVerified")
+        .withArgs(1, loggerSigner.address, 0, 45)
+        .and.to.emit(vax, "TemperatureLogged")
+        .withArgs(1, 45, 5, false);
+
+      expect(await vax.sensorNonces(loggerSigner.address)).to.equal(1n);
+
+      const logs = await vax.getTemperatureLogs(1);
+      expect(logs.length).to.equal(1);
+      expect(logs[0].tempX10).to.equal(45);
+      expect(logs[0].excursion).to.equal(false);
+      expect(logs[0].logger).to.equal(loggerSigner.address);
+    });
+
+    it("applies dynamic expiry penalty and consumes excursion budget for thermal spikes", async function () {
+      const batchBefore = await vax.getBatch(1);
+      const now = await time.latest();
+      const currentNonce = await vax.sensorNonces(loggerSigner.address);
+
+      const reading = createReadingPayload({
+        batchId: 1,
+        tempCelsius: 14.0, // Excursion: above 8.0°C limit
+        durationMins: 6,
+        nonce: currentNonce,
+        timestamp: now
+      });
+
+      const { signature } = await signTelemetry(loggerSigner, proxyAddress, chainId, reading);
+      const expectedPenaltySeconds = 6 * 10 * 60; // 6 mins * 10 factor * 60 secs = 3600s (1 hr)
+
+      await expect(vax.connect(loggerSigner).submitSignedTelemetry(reading, signature))
+        .to.emit(vax, "ExcursionDetected")
+        .withArgs(1, 140, 6, expectedPenaltySeconds);
+
+      const batchAfter = await vax.getBatch(1);
+      expect(batchAfter.excursionMinsUsed).to.equal(6);
+      expect(batchAfter.effectiveExpiry).to.equal(batchBefore.effectiveExpiry - BigInt(expectedPenaltySeconds));
+    });
+
+    it("autonomously transitions batch to SPOILED when excursion budget is exhausted", async function () {
+      const now = await time.latest();
+      const currentNonce = await vax.sensorNonces(loggerSigner.address);
+
+      // Excursion budget is 20 mins; submit 25-minute excursion
+      const reading = createReadingPayload({
+        batchId: 1,
+        tempCelsius: 24.5,
+        durationMins: 25,
+        nonce: currentNonce,
+        timestamp: now
+      });
+
+      const { signature } = await signTelemetry(loggerSigner, proxyAddress, chainId, reading);
+
+      await expect(vax.connect(loggerSigner).submitSignedTelemetry(reading, signature))
+        .to.emit(vax, "BatchSpoiled")
+        .withArgs(1, 25);
+
+      const batch = await vax.getBatch(1);
+      expect(batch.status).to.equal(Status.SPOILED);
+
+      // Verification report reflects spoiled status
+      const verification = await vax.verifyBatch(1);
+      expect(verification.code).to.equal(2);
+      expect(verification.message).to.equal("Batch is spoiled");
+
+      // Spoiled batch blocks custody acceptance
+      await expect(
+        vax.connect(carrier1).acceptTransfer(1, "DEFRK", "0x", "Attempt acceptance")
+      ).to.be.revertedWith("Batch is blocked");
+    });
+
+    it("reverts replay attacks reusing an already-processed sequence nonce", async function () {
+      const now = await time.latest();
+      const reading = createReadingPayload({
+        batchId: 1,
+        tempCelsius: 5.0,
+        durationMins: 5,
+        nonce: 0,
+        timestamp: now
+      });
+
+      const { signature } = await signTelemetry(loggerSigner, proxyAddress, chainId, reading);
+
+      // First submission succeeds
+      await vax.connect(loggerSigner).submitSignedTelemetry(reading, signature);
+
+      // Second replay attempt with identical signature and nonce must revert
+      await expect(
+        vax.connect(loggerSigner).submitSignedTelemetry(reading, signature)
+      ).to.be.revertedWith("Invalid sequence nonce");
+    });
+
+    it("reverts skipped or out-of-order nonces", async function () {
+      const now = await time.latest();
+      const skippedNonceReading = createReadingPayload({
+        batchId: 1,
+        tempCelsius: 5.0,
+        durationMins: 5,
+        nonce: 99, // Expected 0
+        timestamp: now
+      });
+
+      const { signature } = await signTelemetry(loggerSigner, proxyAddress, chainId, skippedNonceReading);
+
+      await expect(
+        vax.connect(loggerSigner).submitSignedTelemetry(skippedNonceReading, signature)
+      ).to.be.revertedWith("Invalid sequence nonce");
+    });
+
+    it("reverts tampered readings where temperature payload was altered in transit", async function () {
+      const now = await time.latest();
+      const validReading = createReadingPayload({
+        batchId: 1,
+        tempCelsius: 4.0,
+        durationMins: 5,
+        nonce: 0,
+        timestamp: now
+      });
+
+      // Sign the 4.0°C reading
+      const { signature } = await signTelemetry(loggerSigner, proxyAddress, chainId, validReading);
+
+      // Adversary tampers with the temperature, changing it to 15.0°C without resigning
+      const tamperedReading = { ...validReading, tempX10: 150n };
+
+      await expect(
+        vax.connect(loggerSigner).submitSignedTelemetry(tamperedReading, signature)
+      ).to.be.revertedWith("Unauthorized sensor");
+    });
+
+    it("reverts telemetry signed by unauthorized hardware keys", async function () {
+      const unauthorizedSigner = carrier2; // Not granted LOGGER_ROLE
+      const now = await time.latest();
+      const reading = createReadingPayload({
+        batchId: 1,
+        tempCelsius: 5.0,
+        durationMins: 5,
+        nonce: 0,
+        timestamp: now
+      });
+
+      const { signature } = await signTelemetry(unauthorizedSigner, proxyAddress, chainId, reading);
+
+      await expect(
+        vax.connect(unauthorizedSigner).submitSignedTelemetry(reading, signature)
+      ).to.be.revertedWith("Unauthorized sensor");
+    });
+
+    it("reverts calls to legacy manual logTemperature", async function () {
+      await expect(
+        vax.connect(loggerSigner).logTemperature(1, 50, 5)
+      ).to.be.revertedWith("Deprecated: Use submitSignedTelemetry with hardware EIP-712 signatures");
+    });
+  });
+});
