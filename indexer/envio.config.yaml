@@ -1,0 +1,19 @@
+name: vaxpass-indexer
+networks:
+  - id: 84532 # Base Sepolia
+    start_block: 0
+    contracts:
+      - name: VaxPassUpgradeable
+        address:
+          - "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
+        handler: src/EventHandlers.ts
+        events:
+          - event: BatchRegistered(uint256 indexed id, string lotNumber, address indexed manufacturer)
+          - event: CustodyHopRecorded(uint256 indexed id, uint256 indexed hopIndex, address from, address to, uint256 timestamp, string locationCode, string notes)
+          - event: CustodyTransferred(uint256 indexed id, address indexed from, address indexed to, uint8 status)
+          - event: ReceiptConfirmed(uint256 indexed id, address indexed actor, bool distributorSide)
+          - event: TemperatureLogged(uint256 indexed id, int256 tempX10, uint256 durationMins, bool excursion)
+          - event: BatchSpoiled(uint256 indexed id, uint256 excursionMinsUsed)
+          - event: BatchRecalled(uint256 indexed id, string reason)
+          - event: DoseAdministeredWithCommitment(uint256 indexed id, bytes32 indexed commitment, address indexed clinic)
+          - event: BatchExpired(uint256 indexed id)

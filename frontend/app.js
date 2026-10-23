@@ -27,6 +27,10 @@ let config, read, walletProvider, write, writeContract, account, activeRoles = [
 let sensorFeed = [], selectedSensorBatch = 1, lastTransaction = null, livePoller = null, activity = [], checkpointId = null;
 let mode = "live", activeDemoRole = "manufacturer", distributorTab = "incoming";
 let authMode = "web3", smartAccountInfo = null, isGaslessSponsored = true;
+let viewMode = localStorage.getItem("vaxpassViewMode") || "grid";
+let activeStatusFilter = "all";
+let searchQuery = "";
+let isDataLoading = false;
 
 /* ==========================================================================
    Utilities & Formatters
@@ -899,7 +903,28 @@ async function init() {
   bindEvents(); 
   bindPolishEvents(); 
   startLiveUpdates(); 
+
+  if (window.VaxPassGraphQL) {
+    VaxPassGraphQL.checkHealth().then(updateIndexerStatusBadge);
+  }
+
   render();
+}
+
+function updateIndexerStatusBadge() {
+  const badgeEl = $("#indexerBadge");
+  const textEl = $("#indexerStatusText");
+  if (!badgeEl || !textEl) return;
+  const isOnline = window.VaxPassGraphQL?.isOnline();
+  if (isOnline) {
+    badgeEl.className = "indexer-chip online";
+    textEl.textContent = "Subgraph Live";
+    badgeEl.title = "Connected to GraphQL Subgraph / HyperIndex";
+  } else {
+    badgeEl.className = "indexer-chip fallback";
+    textEl.textContent = "RPC Direct";
+    badgeEl.title = "Direct on-chain RPC Fallback Active";
+  }
 }
 
 function updateModeControls() {
@@ -927,11 +952,23 @@ function updateModeControls() {
     gaslessBadge.title = "ERC-4337 Gas Sponsorship active across all operations";
   }
 
+  updateIndexerStatusBadge();
+
   const networkName = $("#networkName");
   const networkChip = $("#networkChip");
   if (networkName && config) {
     const chainId = Number(config.chainId);
-    const label = chainId === 31337 ? "Hardhat (31337)" : chainId === 11155111 ? "Sepolia (11155111)" : `Chain ID ${chainId}`;
+    const label = chainId === 31337 
+      ? "Hardhat (31337)" 
+      : chainId === 84532 
+        ? "Base Sepolia L2 (84532)" 
+        : chainId === 421614 
+          ? "Arbitrum Sepolia L2 (421614)" 
+          : chainId === 11155420 
+            ? "OP Sepolia L2 (11155420)" 
+            : chainId === 11155111 
+              ? "Sepolia (11155111)" 
+              : `Chain ID ${chainId}`;
     networkName.textContent = label;
     if (networkChip) {
       networkChip.classList.remove("disconnected");
@@ -1229,9 +1266,250 @@ async function tx(promiseOrFn, success = "Transaction confirmed.", functionName 
 }
 
 async function batches() {
-  const stats = await read.getStats();
-  const count = Number(stats.totalBatches);
-  return Promise.all(Array.from({ length: count }, (_, i) => read.getBatch(i + 1)));
+  const fallback = async () => {
+    const stats = await read.getStats();
+    const count = Number(stats.totalBatches);
+    return Promise.all(Array.from({ length: count }, (_, i) => read.getBatch(i + 1)));
+  };
+
+  if (window.VaxPassGraphQL) {
+    try {
+      const res = await VaxPassGraphQL.fetchBatches({ contractFallback: fallback });
+      updateIndexerStatusBadge();
+      return res.batches;
+    } catch (err) {
+      console.warn("GraphQL batches fetch error, using direct RPC fallback:", err);
+      updateIndexerStatusBadge();
+    }
+  }
+
+  return fallback();
+}
+
+function applyFilters(batchList) {
+  let res = [...batchList];
+  if (activeStatusFilter !== "all") {
+    if (activeStatusFilter === "in_transit") {
+      res = res.filter(b => Number(b.status) === 1);
+    } else if (activeStatusFilter === "delivered") {
+      res = res.filter(b => Number(b.status) === 2);
+    } else if (activeStatusFilter === "in_use") {
+      res = res.filter(b => Number(b.status) === 3);
+    } else if (activeStatusFilter === "spoiled") {
+      res = res.filter(b => Number(b.status) === 5);
+    } else if (activeStatusFilter === "risk") {
+      res = res.filter(b => statusClass(b) === "risk");
+    } else if (activeStatusFilter === "safe") {
+      res = res.filter(b => statusClass(b) === "safe");
+    }
+  }
+
+  if (searchQuery.trim()) {
+    const q = searchQuery.toLowerCase().trim();
+    res = res.filter(b => 
+      vx(b.id).toLowerCase().includes(q) || 
+      (b.vaccineName && b.vaccineName.toLowerCase().includes(q)) || 
+      (b.lotNumber && b.lotNumber.toLowerCase().includes(q)) ||
+      (b.custodian && b.custodian.toLowerCase().includes(q))
+    );
+  }
+  return res;
+}
+
+function renderBatchSkeletons(count = 3, mode = viewMode) {
+  if (mode === "table") {
+    return `
+      <div class="data-table-container">
+        <table class="enterprise-data-table">
+          <thead>
+            <tr>
+              <th>Batch ID</th>
+              <th>Vaccine & Lot</th>
+              <th>Status</th>
+              <th>Custodian</th>
+              <th>Expiry</th>
+              <th>Excursion Budget</th>
+              <th style="text-align: right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${Array.from({ length: count }, () => `
+              <tr>
+                <td><div class="skeleton-pulse" style="width: 50px; height: 16px;"></div></td>
+                <td><div class="skeleton-pulse" style="width: 140px; height: 16px;"></div></td>
+                <td><div class="skeleton-pulse" style="width: 80px; height: 20px; border-radius: 999px;"></div></td>
+                <td><div class="skeleton-pulse" style="width: 100px; height: 16px;"></div></td>
+                <td><div class="skeleton-pulse" style="width: 110px; height: 16px;"></div></td>
+                <td><div class="skeleton-pulse" style="width: 120px; height: 12px;"></div></td>
+                <td style="text-align: right;"><div class="skeleton-pulse" style="width: 70px; height: 28px; display: inline-block;"></div></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+  return `
+    <div class="grid three">
+      ${Array.from({ length: count }, () => `
+        <div class="skeleton-card">
+          <div class="skeleton-pulse skeleton-title"></div>
+          <div class="skeleton-pulse" style="width: 40%; height: 14px;"></div>
+          <div class="skeleton-pulse" style="width: 100%; height: 40px; margin-top: 8px;"></div>
+          <div class="skeleton-pulse" style="width: 100%; height: 10px;"></div>
+          <div class="skeleton-pulse" style="width: 70%; height: 32px; margin-top: 12px;"></div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderToolbar(allBatches = []) {
+  const total = allBatches.length;
+  const safeCount = allBatches.filter(b => statusClass(b) === "safe").length;
+  const transitCount = allBatches.filter(b => Number(b.status) === 1).length;
+  const deliveredCount = allBatches.filter(b => Number(b.status) === 2).length;
+  const riskCount = allBatches.filter(b => statusClass(b) === "risk").length;
+  const spoiledCount = allBatches.filter(b => Number(b.status) === 5).length;
+
+  return `
+    <div class="enterprise-toolbar">
+      <div class="filter-group">
+        <button type="button" class="filter-chip ${activeStatusFilter === 'all' ? 'active' : ''}" data-action="filter-status" data-status="all">
+          <i class="hgi-stroke hgi-layers-01"></i>
+          <span>All</span>
+          <span class="chip-count">${total}</span>
+        </button>
+        <button type="button" class="filter-chip ${activeStatusFilter === 'safe' ? 'active' : ''}" data-action="filter-status" data-status="safe">
+          <i class="hgi-stroke hgi-checkmark-circle-02"></i>
+          <span>Safe</span>
+          <span class="chip-count">${safeCount}</span>
+        </button>
+        <button type="button" class="filter-chip ${activeStatusFilter === 'in_transit' ? 'active' : ''}" data-action="filter-status" data-status="in_transit">
+          <i class="hgi-stroke hgi-truck-delivery"></i>
+          <span>In Transit</span>
+          <span class="chip-count">${transitCount}</span>
+        </button>
+        <button type="button" class="filter-chip ${activeStatusFilter === 'delivered' ? 'active' : ''}" data-action="filter-status" data-status="delivered">
+          <i class="hgi-stroke hgi-hospital-01"></i>
+          <span>Delivered</span>
+          <span class="chip-count">${deliveredCount}</span>
+        </button>
+        <button type="button" class="filter-chip ${activeStatusFilter === 'risk' ? 'active' : ''}" data-action="filter-status" data-status="risk">
+          <i class="hgi-stroke hgi-alert-triangle"></i>
+          <span>At Risk</span>
+          <span class="chip-count">${riskCount}</span>
+        </button>
+        <button type="button" class="filter-chip ${activeStatusFilter === 'spoiled' ? 'active' : ''}" data-action="filter-status" data-status="spoiled">
+          <i class="hgi-stroke hgi-cancel-circle"></i>
+          <span>Spoiled</span>
+          <span class="chip-count">${spoiledCount}</span>
+        </button>
+      </div>
+
+      <div class="toolbar-controls">
+        <div class="search-box">
+          <i class="hgi-stroke hgi-search-01"></i>
+          <input type="text" id="batchSearchInput" placeholder="Filter batch, vaccine, lot…" value="${escapeHtml(searchQuery)}" aria-label="Search batches">
+          ${searchQuery ? `<button type="button" class="icon-button" data-action="clear-search" style="position: absolute; right: 6px; padding: 2px;" title="Clear search"><i class="hgi-stroke hgi-cancel-01" style="font-size: 0.75rem;"></i></button>` : ""}
+        </div>
+        <div class="view-toggle" role="group" aria-label="View toggle">
+          <button type="button" class="${viewMode === 'grid' ? 'active' : ''}" data-action="set-view-mode" data-mode="grid" title="Passport Grid View">
+            <i class="hgi-stroke hgi-grid-view"></i>
+          </button>
+          <button type="button" class="${viewMode === 'table' ? 'active' : ''}" data-action="set-view-mode" data-mode="table" title="Shadcn Enterprise Data Table">
+            <i class="hgi-stroke hgi-menu-01"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderBatchTable(batchList, actionsFn = () => "") {
+  return `
+    <div class="data-table-container">
+      <table class="enterprise-data-table">
+        <thead>
+          <tr>
+            <th>Batch ID</th>
+            <th>Vaccine & Lot</th>
+            <th>Status</th>
+            <th>Current Custodian</th>
+            <th>Effective Expiry</th>
+            <th>Excursion Usage</th>
+            <th style="text-align: right;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${batchList.map(b => {
+            const pct = Number(b.excursionBudgetMins) 
+              ? Math.min(100, Math.round(Number(b.excursionMinsUsed) * 100 / Number(b.excursionBudgetMins))) 
+              : 0;
+            const customActions = actionsFn(b);
+            return `
+              <tr data-batch-row="${b.id}">
+                <td class="tabular-nums"><b>${vx(b.id)}</b></td>
+                <td>
+                  <div style="font-weight: 600;">${escapeHtml(b.vaccineName)}</div>
+                  <small style="color: var(--muted); font-size: 0.74rem;">Lot: ${escapeHtml(b.lotNumber)} · <b>${Number(b.dosesRemaining)}</b>/${Number(b.totalDoses)} doses</small>
+                </td>
+                <td>${badge(b)}</td>
+                <td>${copyableAddress(b.custodian)}</td>
+                <td>
+                  <div class="tabular-nums" style="font-size: 0.8rem; font-weight: 500;">${date(b.effectiveExpiry)}</div>
+                  <small style="color: var(--muted); font-size: 0.72rem;">${countdown(b.effectiveExpiry)}</small>
+                </td>
+                <td>
+                  <div style="display: flex; justify-content: space-between; font-size: 0.74rem; margin-bottom: 4px;">
+                    <span class="tabular-nums font-bold">${b.excursionMinsUsed}m / ${b.excursionBudgetMins}m</span>
+                    <span style="color: var(--muted); font-size: 0.7rem;">${pct}%</span>
+                  </div>
+                  <div class="progress ${Number(b.status) === 5 ? 'gauge-danger' : pct >= 50 ? 'gauge-warn' : 'gauge-safe'}" style="height: 6px; width: 120px;">
+                    <i style="width:${pct}%"></i>
+                  </div>
+                </td>
+                <td style="text-align: right; white-space: nowrap;">
+                  <div style="display: inline-flex; gap: 6px; align-items: center; justify-content: flex-end;">
+                    <a class="button light" style="padding: 4px 10px; font-size: 0.78rem;" href="#/batch/${b.id}">
+                      <i class="hgi-stroke hgi-passport"></i> Passport
+                    </a>
+                    ${expiryAction(b)}
+                    ${customActions}
+                  </div>
+                </td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderBatchView(batchList, actionsFn = () => "", emptyTitle = "No vaccine batches found", emptySubtitle = "No batches currently registered.", emptyAction = "") {
+  const filtered = applyFilters(batchList);
+
+  if (!filtered.length) {
+    if (activeStatusFilter !== "all" || searchQuery.trim()) {
+      return emptyState(
+        "No matching batches",
+        `No batches found matching filter "${activeStatusFilter}"${searchQuery ? ` and search query "${escapeHtml(searchQuery)}"` : ""}.`,
+        `<button type="button" class="button light" data-action="reset-filters"><i class="hgi-stroke hgi-filter-remove"></i> Clear Filters</button>`
+      );
+    }
+    return emptyState(emptyTitle, emptySubtitle, emptyAction);
+  }
+
+  if (viewMode === "table") {
+    return renderBatchTable(filtered, actionsFn);
+  }
+
+  return `
+    <div class="grid three">
+      ${filtered.map(b => batchCard(b, actionsFn(b))).join("")}
+    </div>
+  `;
 }
 
 function batchCard(b, actions = "") {
@@ -1341,17 +1619,17 @@ function renderAccessDenied(role) {
 
 async function renderHome() {
   const list = await batches(); 
-  const recent = list.slice(-3).reverse();
   
   app.innerHTML = `
     <section class="hero">
       <div class="eyebrow"><i class="hgi-stroke hgi-shield-tick"></i> Cold-Chain Blockchain Passport</div>
       <h1>A tamper-evident passport for every vaccine batch.</h1>
-      <p>VaxPass records custodian handovers, temperature excursions, dynamic expiry reduction, and zero-knowledge dose administration on Ethereum.</p>
+      <p>VaxPass records custodian handovers, temperature excursions, dynamic expiry reduction, and zero-knowledge dose administration on Ethereum & Layer-2.</p>
       <div class="hero-badges">
         <span><i class="hgi-stroke hgi-shield-tick"></i> On-Chain Role Custody</span>
         <span><i class="hgi-stroke hgi-thermometer-cold"></i> Real-Time Excursion Burn-down</span>
         <span><i class="hgi-stroke hgi-lock-key"></i> Zero-Knowledge Patient Privacy</span>
+        <span><i class="hgi-stroke hgi-server-03"></i> Subgraph Indexed Queries</span>
       </div>
       <div class="hero-actions">
         <a class="button teal" href="#/verify"><i class="hgi-stroke hgi-qr-code"></i> Verify a Batch</a>
@@ -1383,10 +1661,9 @@ async function renderHome() {
       </a>
     </section>
 
-    ${page("Recent Batches", "Live data from the configured Ethereum network.", `
-      <div class="grid three">
-        ${recent.length ? recent.map(b => batchCard(b)).join("") : emptyState("No vaccine batches yet", "Register a new batch from the Manufacturer workspace to begin tracking.", '<a class="button teal" href="#/manufacturer"><i class="hgi-stroke hgi-factory"></i> Register First Batch</a>')}
-      </div>
+    ${page("Vaccine Batches Register", "Indexed cold-chain records with GraphQL subsecond query performance.", `
+      ${renderToolbar(list)}
+      ${renderBatchView(list, () => "", "No vaccine batches yet", "Register a new batch from the Manufacturer workspace to begin tracking.", '<a class="button teal" href="#/manufacturer"><i class="hgi-stroke hgi-factory"></i> Register First Batch</a>')}
     `)}
     ${activityTicker()}
   `;
@@ -1558,9 +1835,8 @@ async function renderManufacturer() {
       </div>
     </div>
     <h2 style="margin-top:32px">My batches</h2>
-    <div class="grid three">
-      ${mine.length ? mine.map(b => batchCard(b, actions(b))).join("") : emptyState("No manufacturer batches found", account ? "You haven't registered any batches with this wallet yet." : "Connect the manufacturer wallet to view your batches.", account ? '<a class="button teal" href="#batchForm"><i class="hgi-stroke hgi-factory"></i> Register Batch Above</a>' : '<button class="button teal" data-action="connect"><i class="hgi-stroke hgi-wallet-01"></i> Connect Wallet</button>')}
-    </div>
+    ${mine.length ? renderToolbar(mine) : ''}
+    ${renderBatchView(mine, actions, "No manufacturer batches found", account ? "You haven't registered any batches with this wallet yet." : "Connect the manufacturer wallet to view your batches.", account ? '<a class="button teal" href="#batchForm"><i class="hgi-stroke hgi-factory"></i> Register Batch Above</a>' : '<button class="button teal" data-action="connect"><i class="hgi-stroke hgi-wallet-01"></i> Connect Wallet</button>')}
   `);
 
   $("#batchForm")?.insertAdjacentHTML("afterbegin", `
@@ -1611,6 +1887,9 @@ async function renderDistributor() {
     return `<button class="button light" disabled title="No action pending for this batch."><i class="hgi-stroke hgi-information-circle"></i> In custody</button>`;
   };
 
+  const activeTabList = distributorTab === 'incoming' ? incoming : outgoing;
+  const activeTabActions = distributorTab === 'incoming' ? incomingActions : outgoingActions;
+
   app.innerHTML = page("Distributor workspace", "Accept shipments, identify the destination clinic, and confirm dual handover.", `
     <div style="margin-bottom: 16px; display: flex; justify-content: flex-end;">
       <button class="button light" data-action="scan-gs1-distributor">
@@ -1627,16 +1906,14 @@ async function renderDistributor() {
         </button>
       </div>
 
-      <div class="tabs-content ${distributorTab === 'incoming' ? 'active' : ''}">
-        <div class="grid three">
-          ${incoming.length ? incoming.map(b => batchCard(b, incomingActions(b))).join("") : emptyState("No incoming requests", "When a manufacturer dispatches a batch to your distributor address, it will appear here.")}
-        </div>
-      </div>
-
-      <div class="tabs-content ${distributorTab === 'outgoing' ? 'active' : ''}">
-        <div class="grid three">
-          ${outgoing.length ? outgoing.map(b => batchCard(b, outgoingActions(b))).join("") : emptyState("No batches in your custody", "Batches you have accepted custody for will be listed here until delivered.")}
-        </div>
+      <div style="margin-top: 16px;">
+        ${activeTabList.length ? renderToolbar(activeTabList) : ''}
+        ${renderBatchView(
+          activeTabList, 
+          activeTabActions, 
+          distributorTab === 'incoming' ? "No incoming requests" : "No batches in your custody", 
+          distributorTab === 'incoming' ? "When a manufacturer dispatches a batch to your distributor address, it will appear here." : "Batches you have accepted custody for will be listed here until delivered."
+        )}
       </div>
     </div>
   `);
@@ -1673,11 +1950,12 @@ async function renderClinic() {
       <div class="alert-icon"><i class="hgi-stroke hgi-lock-key"></i></div>
       <div class="alert-body">
         <div class="alert-title">Zero-Knowledge Patient Privacy</div>
-        <div class="alert-description">Patient identifiers are hashed locally in your browser using <code>keccak256</code>. The plaintext ID is never sent to the blockchain or stored in any server.</div>
+        <div class="alert-description">Patient identifiers are salted with clinic-unique keys and hashed in your browser. Raw patient IDs are never transmitted or exposed on-chain.</div>
       </div>
     </div>
-    <div class="grid three" style="margin-top:22px">
-      ${relevant.length ? relevant.map(b => batchCard(b, actions(b))).join("") : emptyState("No clinic deliveries found", "When a distributor designates your clinic for delivery, the batch will appear here.")}
+    <div style="margin-top:22px">
+      ${relevant.length ? renderToolbar(relevant) : ''}
+      ${renderBatchView(relevant, actions, "No clinic deliveries found", "When a distributor designates your clinic for delivery, the batch will appear here.")}
     </div>
   `);
 }
@@ -2016,11 +2294,33 @@ async function verify(raw) {
 }
 
 async function renderAnalytics() {
-  const stats = await read.getStats();
-  const total = Number(stats.totalBatches);
-  const spoiled = Number(stats.spoiled);
-  const recalled = Number(stats.recalled);
-  const expired = Number(stats.expired);
+  let statsData = null;
+  if (window.VaxPassGraphQL) {
+    try {
+      const res = await VaxPassGraphQL.fetchProtocolStats(async () => read.getStats());
+      if (res?.stats) {
+        statsData = res.stats;
+      }
+    } catch (err) {
+      console.warn("GraphQL protocol stats failed, using on-chain RPC fallback:", err);
+    }
+  }
+  if (!statsData) {
+    const raw = await read.getStats();
+    statsData = {
+      totalBatches: Number(raw.totalBatches),
+      dosesAdministered: Number(raw.dosesAdministered),
+      spoiled: Number(raw.spoiled),
+      recalled: Number(raw.recalled),
+      expired: Number(raw.expired)
+    };
+  }
+
+  const total = Number(statsData.totalBatches || 0);
+  const spoiled = Number(statsData.spoiled || 0);
+  const recalled = Number(statsData.recalled || 0);
+  const expired = Number(statsData.expired || 0);
+  const doses = Number(statsData.dosesAdministered || 0);
   const wastage = total ? (((spoiled + recalled + expired) / total) * 100).toFixed(1) : "0.0";
 
   app.innerHTML = page("Network analytics", "A real-time snapshot of batch volumes, patient impact, and cold-chain compliance.", `
@@ -2039,7 +2339,7 @@ async function renderAnalytics() {
           <span class="stat-card-kicker">Patient impact</span>
           <div class="stat-card-icon"><i class="hgi-stroke hgi-injection"></i></div>
         </div>
-        <div class="stat-card-value">${stats.dosesAdministered}</div>
+        <div class="stat-card-value">${doses}</div>
         <div class="stat-card-caption">Doses administered</div>
       </div>
 
@@ -2270,6 +2570,32 @@ function bindEvents() {
       return;
     }
 
+    if (action === "set-view-mode") {
+      viewMode = actionTarget.dataset.mode || "grid";
+      localStorage.setItem("vaxpassViewMode", viewMode);
+      render();
+      return;
+    }
+
+    if (action === "filter-status") {
+      activeStatusFilter = actionTarget.dataset.status || "all";
+      render();
+      return;
+    }
+
+    if (action === "reset-filters") {
+      activeStatusFilter = "all";
+      searchQuery = "";
+      render();
+      return;
+    }
+
+    if (action === "clear-search") {
+      searchQuery = "";
+      render();
+      return;
+    }
+
     if (action === "dismiss-shield") { 
       $("#shieldArea").innerHTML = ""; 
       return; 
@@ -2430,6 +2756,22 @@ function bindEvents() {
       );
     } 
   }); 
+
+  let searchDebounce = null;
+  document.addEventListener("input", e => {
+    if (e.target.id === "batchSearchInput") {
+      clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(() => {
+        searchQuery = e.target.value;
+        render();
+        const inp = $("#batchSearchInput");
+        if (inp) {
+          inp.focus();
+          inp.setSelectionRange(inp.value.length, inp.value.length);
+        }
+      }, 250);
+    }
+  });
 }
 
 init().catch(e => { 

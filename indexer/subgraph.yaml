@@ -1,0 +1,48 @@
+specVersion: 0.0.5
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: VaxPassUpgradeable
+    network: base-sepolia
+    source:
+      address: "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
+      abi: VaxPassUpgradeable
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Batch
+        - CustodyHop
+        - TemperatureLog
+        - DoseReceipt
+        - ProtocolStat
+      abis:
+        - name: VaxPassUpgradeable
+          file: ../artifacts/contracts/VaxPassUpgradeable.sol/VaxPassUpgradeable.json
+      eventHandlers:
+        - event: BatchRegistered(indexed uint256,string,indexed address)
+          handler: handleBatchRegistered
+        - event: CustodyHopRecorded(indexed uint256,indexed uint256,address,address,uint256,string,string)
+          handler: handleCustodyHopRecorded
+        - event: CustodyTransferred(indexed uint256,indexed address,indexed address,uint8)
+          handler: handleCustodyTransferred
+        - event: ReceiptConfirmed(indexed uint256,indexed address,bool)
+          handler: handleReceiptConfirmed
+        - event: TemperatureLogged(indexed uint256,int256,uint256,bool)
+          handler: handleTemperatureLogged
+        - event: TelemetryVerified(indexed uint256,indexed address,indexed uint256,int256)
+          handler: handleTelemetryVerified
+        - event: ExcursionDetected(indexed uint256,int256,uint256,uint256)
+          handler: handleExcursionDetected
+        - event: BatchSpoiled(indexed uint256,uint256)
+          handler: handleBatchSpoiled
+        - event: BatchRecalled(indexed uint256,string)
+          handler: handleBatchRecalled
+        - event: DoseAdministeredWithCommitment(indexed uint256,indexed bytes32,indexed address)
+          handler: handleDoseAdministeredWithCommitment
+        - event: BatchExpired(indexed uint256)
+          handler: handleBatchExpired
+      file: ./src/mapping.ts

@@ -1,0 +1,94 @@
+enum BatchStatus {
+  MANUFACTURED
+  IN_TRANSIT
+  DELIVERED
+  IN_USE
+  DEPLETED
+  SPOILED
+  RECALLED
+  EXPIRED
+}
+
+"""
+On-Chain Vaccine Batch Entity indexed from VaxPass events
+"""
+type Batch @entity {
+  id: ID!
+  batchId: BigInt!
+  vaccineName: String!
+  lotNumber: String!
+  dosesRemaining: BigInt!
+  totalDoses: BigInt!
+  printedExpiry: BigInt!
+  effectiveExpiry: BigInt!
+  minTempX10: BigInt!
+  maxTempX10: BigInt!
+  excursionBudgetMins: BigInt!
+  excursionMinsUsed: BigInt!
+  ipfsCid: String
+  status: BatchStatus!
+  manufacturer: Bytes!
+  custodian: Bytes!
+  clinic: Bytes
+  distributorConfirmed: Boolean!
+  clinicConfirmed: Boolean!
+  createdAt: BigInt!
+  updatedAt: BigInt!
+  hops: [CustodyHop!]! @derivedFrom(field: "batch")
+  telemetryLogs: [TemperatureLog!]! @derivedFrom(field: "batch")
+  doseReceipts: [DoseReceipt!]! @derivedFrom(field: "batch")
+}
+
+"""
+Multi-Hop Supply Chain Checkpoint (DAG model)
+"""
+type CustodyHop @entity {
+  id: ID!
+  batch: Batch!
+  hopIndex: BigInt!
+  from: Bytes!
+  to: Bytes!
+  timestamp: BigInt!
+  locationCode: String!
+  notes: String!
+  transactionHash: Bytes!
+}
+
+"""
+IoT Sensor Telemetry Log (EIP-712 Hardware Authenticated)
+"""
+type TemperatureLog @entity {
+  id: ID!
+  batch: Batch!
+  tempX10: BigInt!
+  durationMins: BigInt!
+  timestamp: BigInt!
+  isExcursion: Boolean!
+  sequenceNonce: BigInt!
+  sensor: Bytes
+  transactionHash: Bytes!
+}
+
+"""
+Salted Patient Dose Receipt (Zero-PII HIPAA Compliant)
+"""
+type DoseReceipt @entity {
+  id: ID!
+  batch: Batch!
+  commitment: Bytes!
+  administeredAt: BigInt!
+  clinic: Bytes!
+  transactionHash: Bytes!
+}
+
+"""
+Global Protocol Statistics
+"""
+type ProtocolStat @entity {
+  id: ID!
+  totalBatchesRegistered: BigInt!
+  totalDosesAdministered: BigInt!
+  totalExcursionsLogged: BigInt!
+  totalSpoiledBatches: BigInt!
+  lastUpdated: BigInt!
+}

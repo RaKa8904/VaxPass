@@ -2518,3 +2518,286 @@ table td,
   color: var(--blue-dark);
 }
 
+/* ==========================================================================
+   Phase 4: Enterprise UI/UX Overhaul (Shadcn Architecture & Motion Guidelines)
+   ========================================================================== */
+
+/* 1. Indexer & Status Chips */
+.indexer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(12, 74, 110, 0.08);
+  border: 1px solid rgba(12, 74, 110, 0.2);
+  color: var(--blue-dark);
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+}
+
+.indexer-chip.online i {
+  color: #10b981;
+}
+
+.indexer-chip.fallback i {
+  color: #f59e0b;
+}
+
+/* 2. Enterprise Filter & View Toolbar */
+.enterprise-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: #ffffff;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-lg);
+  padding: 12px 16px;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 3px rgba(12, 74, 110, 0.04);
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-light);
+  background: #f8fafc;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+.filter-chip:hover {
+  border-color: var(--teal);
+  color: var(--ink);
+  background: #ffffff;
+}
+
+.filter-chip.active {
+  background: rgba(15, 155, 157, 0.12);
+  border-color: var(--teal);
+  color: #0b7285;
+}
+
+.filter-chip .chip-count {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.toolbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-box i {
+  position: absolute;
+  left: 10px;
+  color: var(--muted);
+  pointer-events: none;
+  font-size: 0.9rem;
+}
+
+.search-box input {
+  padding: 7px 12px 7px 32px;
+  font-size: 0.82rem;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-sm);
+  background: #f8fafc;
+  width: 220px;
+  transition: all 180ms ease;
+}
+
+.search-box input:focus {
+  background: #ffffff;
+  border-color: var(--teal);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(15, 155, 157, 0.15);
+  width: 260px;
+}
+
+.view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-sm);
+  background: #f8fafc;
+  padding: 2px;
+  gap: 2px;
+}
+
+.view-toggle button {
+  border: none;
+  background: transparent;
+  padding: 5px 9px;
+  border-radius: 4px;
+  color: var(--muted);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: all 140ms ease;
+}
+
+.view-toggle button.active {
+  background: #ffffff;
+  color: var(--blue-dark);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+/* 3. Shadcn Style Data Table */
+.data-table-container {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-lg);
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(12, 74, 110, 0.03);
+}
+
+.enterprise-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.84rem;
+}
+
+.enterprise-data-table th {
+  background: #f8fafc;
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 0.74rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line-light);
+  white-space: nowrap;
+}
+
+.enterprise-data-table td {
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--line-light);
+  color: var(--ink);
+  vertical-align: middle;
+}
+
+.enterprise-data-table tbody tr {
+  transition: background 120ms ease;
+}
+
+.enterprise-data-table tbody tr:hover {
+  background: rgba(15, 155, 157, 0.025);
+}
+
+.enterprise-data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* 4. Skeleton Loaders (edge-case-ui guideline) */
+.skeleton-pulse {
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s infinite ease-in-out;
+  border-radius: 4px;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.skeleton-card {
+  padding: 20px;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-lg);
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.skeleton-title {
+  width: 60%;
+  height: 20px;
+}
+
+.skeleton-badge {
+  width: 80px;
+  height: 22px;
+  border-radius: 999px;
+}
+
+.skeleton-text {
+  width: 100%;
+  height: 14px;
+}
+
+.skeleton-gauge {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.skeleton-table-row {
+  height: 48px;
+  width: 100%;
+}
+
+/* 5. Spring Physics & Micro-Interactions (motion-framer) */
+.card, .batch-card, .button, .badge, .filter-chip {
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms ease, background 180ms ease;
+}
+
+.button:active, .filter-chip:active {
+  transform: scale(0.97) !important;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(12, 74, 110, 0.08);
+}
+
+.stagger-in {
+  animation: spring-fade-in 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes spring-fade-in {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+
