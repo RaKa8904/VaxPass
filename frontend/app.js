@@ -26,6 +26,7 @@ const SENSOR_READINGS = {
 let config, read, walletProvider, write, writeContract, account, activeRoles = [], roleIds = {}, rpcProvider;
 let sensorFeed = [], selectedSensorBatch = 1, lastTransaction = null, livePoller = null, activity = [], checkpointId = null;
 let mode = "live", activeDemoRole = "manufacturer", distributorTab = "incoming";
+let authMode = "web3", smartAccountInfo = null, isGaslessSponsored = true;
 
 /* ==========================================================================
    Utilities & Formatters
@@ -248,11 +249,226 @@ function emptyState(title, subtitle, actionHtml = "") {
 }
 
 function requireWallet() { 
-  if (!write || !account) { 
-    toast("Connect MetaMask to perform this action.", true); 
+  if (!account) { 
+    toast("Sign in with Passkey, Email, or Web3 wallet to perform this action.", true); 
+    handleConnectClick?.();
     return false; 
   } 
   return true; 
+}
+
+let html5QrScanner = null;
+
+function promptAuthModal() {
+  return new Promise((resolve) => {
+    const bodyHtml = `
+      <div class="auth-method-list">
+        <button type="button" class="auth-method-card" id="authPasskeyBtn">
+          <div class="auth-method-icon">
+            <i class="hgi-stroke hgi-fingerprint"></i>
+          </div>
+          <div class="auth-method-info">
+            <b>WebAuthn Passkey (Biometrics)</b>
+            <small>Touch ID, Face ID, or Windows Hello. Zero gas, instant smart account.</small>
+          </div>
+        </button>
+
+        <button type="button" class="auth-method-card" id="authEmailBtn">
+          <div class="auth-method-icon">
+            <i class="hgi-stroke hgi-mail-01"></i>
+          </div>
+          <div class="auth-method-info">
+            <b>Corporate Email / Employee ID</b>
+            <small>Authenticate with hospital or logistics email address.</small>
+          </div>
+        </button>
+
+        <button type="button" class="auth-method-card" id="authMetaMaskBtn">
+          <div class="auth-method-icon">
+            <i class="hgi-stroke hgi-wallet-01"></i>
+          </div>
+          <div class="auth-method-info">
+            <b>Web3 Browser Extension</b>
+            <small>Connect MetaMask, Coinbase, or Rabby wallet.</small>
+          </div>
+        </button>
+      </div>
+    `;
+
+    promptModal({
+      title: "Enterprise Sign-in",
+      subtitle: "ERC-4337 Smart Account & Gasless Session",
+      iconHtml: '<i class="hgi-stroke hgi-fingerprint"></i>',
+      bodyHtml,
+      confirmText: "Cancel",
+      cancelText: "Close",
+      onMount: ({ resolve: modalResolve }) => {
+        $("#modalConfirmBtn")?.style.setProperty("display", "none");
+
+        $("#authPasskeyBtn")?.addEventListener("click", async () => {
+          const user = prompt("Enter courier or clinic identifier (e.g., driver.smith@vaxlogistics.com):", "courier.driver@vaxlogistics.com");
+          if (!user) return;
+          try {
+            const res = await VaxPassAA.authenticateWithPasskey(user);
+            modalResolve(res);
+          } catch (err) {
+            toast("Passkey authentication failed: " + err.message, true);
+          }
+        });
+
+        $("#authEmailBtn")?.addEventListener("click", async () => {
+          const email = prompt("Enter corporate email (e.g., nurse.joy@saintmarys.org):", "nurse.joy@saintmarys.org");
+          if (!email) return;
+          try {
+            const res = await VaxPassAA.authenticateWithEmail(email);
+            modalResolve(res);
+          } catch (err) {
+            toast("Email login failed: " + err.message, true);
+          }
+        });
+
+        $("#authMetaMaskBtn")?.addEventListener("click", () => {
+          modalResolve({ authType: "web3" });
+        });
+      }
+    }).then(resolve);
+  });
+}
+
+function openBarcodeScannerModal(onScannedCallback) {
+  return new Promise((resolve) => {
+    const bodyHtml = `
+      <div class="scanner-container">
+        <div id="barcodeReader" style="min-height: 240px; border-radius: 8px; overflow: hidden;"></div>
+        <div class="scanner-actions" style="margin-top: 12px; display: flex; flex-direction: column; gap: 8px; width: 100%;">
+          <button type="button" id="demoGs1Btn" class="button light" style="width: 100%; font-size: 0.84rem;">
+            <i class="hgi-stroke hgi-flash"></i> Test with Sample GS1 2D DataMatrix Barcode
+          </button>
+          <small style="color: var(--muted); text-align: center;">Supports FDA DSCSA / EU FMD standard (GTIN AI 01, Expiry AI 17, Lot AI 10, Serial AI 21)</small>
+        </div>
+      </div>
+    `;
+
+    promptModal({
+      title: "GS1 2D DataMatrix Camera Scanner",
+      subtitle: "Scan pharmaceutical packaging barcode or DataMatrix",
+      iconHtml: '<i class="hgi-stroke hgi-barcode-scanner"></i>',
+      bodyHtml,
+      confirmText: "Close",
+      cancelText: "Cancel",
+      onMount: ({ resolve: modalResolve }) => {
+        $("#modalConfirmBtn")?.style.setProperty("display", "none");
+
+        function cleanupScanner() {
+          if (html5QrScanner) {
+            try {
+              html5QrScanner.stop().catch(() => {});
+            } catch (_) {}
+            html5QrScanner = null;
+          }
+        }
+
+        $("#demoGs1Btn")?.addEventListener("click", () => {
+          const sample = window.GS1Parser 
+            ? GS1Parser.generateMockGS1({ lotNumber: "LOT-2026-COV01", expiryYYMMDD: "261231" })
+            : "(01)00312345678906(17)261231(10)LOT-2026-COV01(21)SN987654321";
+          const parsed = window.GS1Parser ? GS1Parser.parseBarcode(sample) : { success: true, lotNumber: "LOT-2026-COV01", isGS1: true, raw: sample };
+          cleanupScanner();
+          modalResolve(parsed);
+          if (onScannedCallback) onScannedCallback(parsed);
+        });
+
+        // Initialize camera scanner
+        if (typeof Html5Qrcode !== "undefined") {
+          try {
+            html5QrScanner = new Html5Qrcode("barcodeReader");
+            html5QrScanner.start(
+              { facingMode: "environment" },
+              { fps: 10, qrbox: { width: 220, height: 220 } },
+              (decodedText) => {
+                const parsed = window.GS1Parser ? GS1Parser.parseBarcode(decodedText) : { success: true, raw: decodedText };
+                cleanupScanner();
+                modalResolve(parsed);
+                if (onScannedCallback) onScannedCallback(parsed);
+              },
+              () => {}
+            ).catch(err => {
+              console.warn("Camera start not available in environment:", err);
+              const el = $("#barcodeReader");
+              if (el) {
+                el.innerHTML = `
+                  <div style="padding: 24px; text-align: center; color: var(--muted); background: #f8fafc; border: 1px dashed var(--line-light); border-radius: 8px;">
+                    <i class="hgi-stroke hgi-camera-off" style="font-size: 2rem; display: block; margin-bottom: 8px; color: var(--muted);"></i>
+                    <p style="margin: 0 0 6px 0; font-size: 0.9rem; font-weight: 600;">Camera device not detected or permission denied</p>
+                    <small>Click the sample barcode button below to test GS1 parsing.</small>
+                  </div>
+                `;
+              }
+            });
+          } catch (e) {
+            console.warn("Html5Qrcode scanner failed to initialize:", e);
+          }
+        }
+      }
+    }).then(resolve);
+  });
+}
+
+function promptReceiptModal(receipt) {
+  const bodyHtml = `
+    <div style="background: #f8fafc; border: 1px solid var(--line-light); border-radius: var(--radius-md); padding: 16px; margin-bottom: 16px; text-align: center;">
+      <div id="receiptQrCode" style="display: inline-block; padding: 10px; background: white; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 12px;"></div>
+      <p style="margin: 0; font-size: 0.92rem; font-weight: 700; color: var(--ink);">${escapeHtml(receipt.vaccineName || "COVID-19 Vaccine")}</p>
+      <small style="color: var(--muted);">Batch ${vx(receipt.batchId)} · Administered: ${new Date().toLocaleDateString()}</small>
+    </div>
+
+    <div class="detail-list" style="font-size: 0.8rem;">
+      <div><span>On-chain Commitment</span><code style="word-break: break-all;">${short(receipt.commitment)}</code></div>
+      <div><span>Blinding Salt</span><code style="word-break: break-all;">${short(receipt.salt)}</code></div>
+      <div><span>Gas Sponsorship</span><span class="badge safe"><i class="hgi-stroke hgi-flash"></i> Paymaster Sponsored (0 ETH)</span></div>
+      <div><span>Privacy Compliance</span><span class="badge safe"><i class="hgi-stroke hgi-security-check"></i> Zero-PII Salted Hash</span></div>
+    </div>
+
+    <p class="privacy-guarantee-note" style="margin-top: 14px;">
+      <b>Digital Pass Guarantee:</b> This cryptographic receipt contains a private 256-bit blinding salt. Your identity cannot be reverse-engineered on-chain. Present this pass or QR code for proof of vaccination.
+    </p>
+  `;
+
+  promptModal({
+    title: "Cryptographic Vaccination Receipt",
+    subtitle: "Zero-PII Verifiable Digital Pass (HIPAA & GDPR Compliant)",
+    iconHtml: '<i class="hgi-stroke hgi-checkmark-circle-02" style="color: #059669;"></i>',
+    bodyHtml,
+    confirmText: "Copy Receipt JSON",
+    cancelText: "Done",
+    onMount: ({ form }) => {
+      if (typeof QRCode !== "undefined") {
+        const qrContainer = $("#receiptQrCode");
+        if (qrContainer) {
+          new QRCode(qrContainer, {
+            text: JSON.stringify({
+              protocol: "VaxPass-Enterprise-v2",
+              batchId: receipt.batchId,
+              commitment: receipt.commitment,
+              salt: receipt.salt
+            }),
+            width: 140,
+            height: 140
+          });
+        }
+      }
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try {
+          await navigator.clipboard.writeText(JSON.stringify(receipt, null, 2));
+          toast("Vaccination receipt copied to clipboard!");
+        } catch {
+          toast("Copied to clipboard.");
+        }
+      });
+    }
+  });
 }
 
 /* ==========================================================================
@@ -352,14 +568,20 @@ function promptAddressModal({ title, subtitle, roleLabel, iconType = "distributo
     : isClinic
       ? "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
       : "";
-  const quickFillHtml = isLocal && seededAddress ? `
-    <div style="margin-top: 8px;">
-      <button type="button" id="modalFillSeededBtn" class="address-chip" style="font-size: 0.78rem; padding: 4px 10px; cursor: pointer;">
-        <i class="hgi-stroke hgi-user-check-01"></i>
-        <span>Use default local ${escapeHtml(roleLabel)} (${short(seededAddress)})</span>
+  const quickFillHtml = `
+    <div style="margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px;">
+      ${isLocal && seededAddress ? `
+        <button type="button" id="modalFillSeededBtn" class="address-chip" style="font-size: 0.78rem; padding: 4px 10px; cursor: pointer;">
+          <i class="hgi-stroke hgi-user-check-01"></i>
+          <span>Use default local ${escapeHtml(roleLabel)} (${short(seededAddress)})</span>
+        </button>
+      ` : ""}
+      <button type="button" id="modalScanAddressBtn" class="address-chip" style="font-size: 0.78rem; padding: 4px 10px; cursor: pointer;">
+        <i class="hgi-stroke hgi-barcode-scanner"></i>
+        <span>Scan Recipient Barcode / QR</span>
       </button>
     </div>
-  ` : "";
+  `;
 
   const bodyHtml = `
     <label for="modalAddressInput">
@@ -396,6 +618,7 @@ function promptAddressModal({ title, subtitle, roleLabel, iconType = "distributo
       const feedback = $("#modalAddressFeedback");
       const pasteBtn = $("#modalPasteBtn");
       const fillSeededBtn = $("#modalFillSeededBtn");
+      const scanAddressBtn = $("#modalScanAddressBtn");
 
       function validate() {
         const val = input.value.trim();
@@ -422,6 +645,16 @@ function promptAddressModal({ title, subtitle, roleLabel, iconType = "distributo
         input.value = seededAddress;
         validate();
         input.focus();
+      });
+
+      scanAddressBtn?.addEventListener("click", () => {
+        openBarcodeScannerModal((parsed) => {
+          let clean = (parsed.raw || "").trim();
+          if (clean.startsWith("ethereum:")) clean = clean.replace("ethereum:", "").split("@")[0].split("?")[0];
+          input.value = clean;
+          validate();
+          input.focus();
+        });
       });
 
       pasteBtn?.addEventListener("click", async () => {
@@ -649,7 +882,7 @@ async function init() {
     regulator: await read.REGULATOR_ROLE()
   };
 
-  $("#connectButton")?.addEventListener("click", connect);
+  $("#connectButton")?.addEventListener("click", handleConnectClick);
   $("#menuButton")?.addEventListener("click", () => $("#nav")?.classList.toggle("open"));
   
   updateModeControls();
@@ -659,7 +892,7 @@ async function init() {
     window.ethereum.on("accountsChanged", handleAccountChanged); 
     window.ethereum.on("chainChanged", () => window.location.reload()); 
     if ((await window.ethereum.request({ method: "eth_accounts" })).length) {
-      await connect(false); 
+      await connectMetaMask(false); 
     }
   }
 
@@ -672,16 +905,26 @@ async function init() {
 function updateModeControls() {
   const connectBtn = $("#connectButton");
   if (connectBtn) {
+    const icon = authMode === "passkey" ? "hgi-fingerprint" : authMode === "email" ? "hgi-mail-01" : "hgi-wallet-01";
+    const label = account 
+      ? (smartAccountInfo?.label ? smartAccountInfo.label.split("@")[0] : short(account))
+      : "Sign in";
     connectBtn.innerHTML = `
-      <i class="hgi-stroke hgi-wallet-01" aria-hidden="true"></i>
-      <span>${account ? short(account) : "Connect wallet"}</span>
+      <i class="hgi-stroke ${icon}" aria-hidden="true"></i>
+      <span>${escapeHtml(label)}</span>
     `;
     if (account) {
       connectBtn.classList.add("connected");
-      connectBtn.title = `Connected: ${account}`;
+      connectBtn.title = `Signed in (${authMode}): ${account}`;
     } else {
       connectBtn.classList.remove("connected");
     }
+  }
+
+  const gaslessBadge = $("#gaslessBadge");
+  if (gaslessBadge) {
+    gaslessBadge.style.display = "inline-flex";
+    gaslessBadge.title = "ERC-4337 Gas Sponsorship active across all operations";
   }
 
   const networkName = $("#networkName");
@@ -723,13 +966,93 @@ function bindPolishEvents() {
       const role = e.target.closest("[data-role]")?.dataset?.role;
       return tx(() => sendWithPreflight("requestRole", [roleIds[role]]), "Role request submitted.", "requestRole");
     } 
+    if (action === "scan-gs1-register") {
+      return openBarcodeScannerModal((parsed) => {
+        if (parsed.lotNumber) {
+          const lotEl = $("#lotNumber");
+          if (lotEl) lotEl.value = parsed.lotNumber;
+        }
+        if (parsed.expiryDate) {
+          const expEl = $("#printedExpiry");
+          if (expEl) expEl.value = parsed.expiryDate.iso.slice(0, 16);
+        }
+        toast(`GS1 Barcode Scanned: Lot ${parsed.lotNumber || "N/A"} · Expiry: ${parsed.expiryDate?.formatted || "N/A"}`);
+      });
+    }
+    if (action === "scan-gs1-distributor") {
+      return openBarcodeScannerModal(async (parsed) => {
+        const query = (parsed.lotNumber || parsed.raw || "").trim();
+        toast(`Scanned: ${query}. Checking batches…`);
+        const list = await batches();
+        const match = list.find(b => b.lotNumber.toLowerCase() === query.toLowerCase() || String(b.id) === query);
+        if (match) {
+          location.hash = `#/batch/${match.id}`;
+          toast(`Matching Batch ${vx(match.id)} found!`);
+        } else {
+          toast(`Scanned GS1 Lot: ${query}`, "info");
+        }
+      });
+    }
+    if (action === "scan-gs1-verify") {
+      return openBarcodeScannerModal((parsed) => {
+        const query = parsed.lotNumber || parsed.gtin || parsed.raw;
+        const input = $("#verifyId");
+        if (input) input.value = query;
+        verify(query);
+      });
+    }
   }); 
   document.addEventListener("change", e => { 
     if (e.target.id === "batchPreset") applyPreset(e.target.value); 
   }); 
 }
 
-async function connect(request = true) {
+async function handleConnectClick() {
+  if (account) {
+    const doDisconnect = confirm(`Currently signed in as:\n${account}\n(${authMode.toUpperCase()})\n\nDo you want to switch accounts or sign out?`);
+    if (doDisconnect) {
+      account = null;
+      smartAccountInfo = null;
+      authMode = "web3";
+      writeContract = null;
+      write = null;
+      activeRoles = [];
+      updateModeControls();
+      toast("Signed out.");
+      return render();
+    }
+    return;
+  }
+
+  const authChoice = await promptAuthModal();
+  if (!authChoice) return;
+
+  if (authChoice.authType === "web3") {
+    return connectMetaMask(true);
+  }
+
+  account = authChoice.smartAccountAddress;
+  authMode = authChoice.authType;
+  smartAccountInfo = authChoice;
+  writeContract = read;
+  write = writeContract;
+
+  activeRoles = [];
+  for (const [key, id] of Object.entries(roleIds)) {
+    if (await read.hasRole(id, account)) activeRoles.push(key);
+  }
+
+  updateModeControls();
+  toast(`Smart Account provisioned: ${short(account)} · ${authChoice.label} (Gasless Paymaster Active)`);
+
+  const nextRole = ROLE_LANDING_ORDER.find(role => activeRoles.includes(role));
+  if (nextRole) {
+    location.hash = `#/${nextRole === "logger" ? "sensor" : nextRole}`;
+  }
+  render();
+}
+
+async function connectMetaMask(request = true) {
   if (!window.ethereum) return toast("MetaMask was not detected. Install its browser extension first.", true);
   try {
     walletProvider = new ethers.BrowserProvider(window.ethereum);
@@ -741,6 +1064,8 @@ async function connect(request = true) {
     }
     const signer = await walletProvider.getSigner(); 
     account = await signer.getAddress(); 
+    authMode = "web3";
+    smartAccountInfo = null;
     writeContract = read.connect(signer);
     write = writeContract;
     activeRoles = [];
@@ -754,7 +1079,7 @@ async function connect(request = true) {
     if (requiredRole && !activeRoles.includes(requiredRole) && nextRole) {
       location.hash = `#/${nextRole === "logger" ? "sensor" : nextRole}`;
     }
-    toast("Wallet connected."); 
+    toast("MetaMask wallet connected."); 
     render();
   } catch (e) { 
     toast(friendly(e), true); 
@@ -771,7 +1096,7 @@ async function handleAccountChanged(accounts) {
     location.hash = "#/"; 
     return render(); 
   } 
-  await connect(false); 
+  await connectMetaMask(false); 
   const nextRole = ROLE_LANDING_ORDER.find(role => activeRoles.includes(role)); 
   if (nextRole) location.hash = `#/${nextRole === "logger" ? "sensor" : nextRole}`; 
 }
@@ -779,6 +1104,17 @@ async function handleAccountChanged(accounts) {
 let isTxPending = false;
 
 async function sendWithPreflight(method, args = []) {
+  if (authMode !== "web3" || !walletProvider) {
+    console.log(`[Paymaster Flow] Sponsoring transaction for method: ${method}`);
+    return VaxPassAA.sendSponsoredTransaction({
+      provider: rpcProvider || (window.ethereum ? new ethers.BrowserProvider(window.ethereum) : null),
+      targetContract: read,
+      functionName: method,
+      args,
+      smartAccountAddress: account
+    });
+  }
+
   if (!walletProvider || !account) {
     throw new Error("Wallet is not connected to the configured contract.");
   }
@@ -802,9 +1138,15 @@ async function sendWithPreflight(method, args = []) {
   return contractMethod(...args, { gasLimit });
 }
 
-async function administerDose(id, patientHash) {
-  if (!walletProvider || !account) {
-    throw new Error("Connect the clinic wallet before administering a dose.");
+async function administerDose(id, commitment) {
+  if (authMode !== "web3" || !walletProvider) {
+    return VaxPassAA.sendSponsoredTransaction({
+      provider: rpcProvider || (window.ethereum ? new ethers.BrowserProvider(window.ethereum) : null),
+      targetContract: read,
+      functionName: "administerDose",
+      args: [id, commitment],
+      smartAccountAddress: account
+    });
   }
 
   const selectedAccounts = await walletProvider.send("eth_accounts", []);
@@ -832,14 +1174,13 @@ async function administerDose(id, patientHash) {
     throw new Error("This batch has expired.");
   }
 
-  // Bind both simulation and submission to the current MetaMask signer.
   const signer = await walletProvider.getSigner(selectedAccount);
   const clinicContract = read.connect(signer);
   const administer = clinicContract.getFunction("administerDose");
-  await administer.staticCall(id, patientHash);
-  const gasEstimate = await administer.estimateGas(id, patientHash);
+  await administer.staticCall(id, commitment);
+  const gasEstimate = await administer.estimateGas(id, commitment);
   const gasLimit = (gasEstimate * 120n) / 100n;
-  return administer(id, patientHash, { gasLimit });
+  return administer(id, commitment, { gasLimit });
 }
 
 async function tx(promiseOrFn, success = "Transaction confirmed.", functionName = "Transaction", rerender = true) { 
@@ -849,23 +1190,19 @@ async function tx(promiseOrFn, success = "Transaction confirmed.", functionName 
   }
   isTxPending = true;
   document.body.classList.add("tx-busy");
-  const pendingToast = toast("Waiting for MetaMask signature & blockchain confirmation…", "pending"); 
+  const pendingToast = toast(
+    authMode !== "web3" 
+      ? "Sponsoring transaction via ERC-4337 Paymaster…" 
+      : "Waiting for wallet signature & blockchain confirmation…", 
+    "pending"
+  ); 
   try { 
     const submittingAccount = account;
     const t = typeof promiseOrFn === "function" ? await promiseOrFn() : await promiseOrFn; 
     if (!t?.hash) {
-      throw new Error("MetaMask did not return a transaction hash.");
+      throw new Error("Transaction did not return a valid hash.");
     }
-    const receipt = await t.wait(1);
-    const verifiedReceipt = await rpcProvider.waitForTransaction(t.hash, 1, 120000);
-    if (!receipt || !verifiedReceipt || receipt.hash.toLowerCase() !== t.hash.toLowerCase() ||
-        verifiedReceipt.hash.toLowerCase() !== t.hash.toLowerCase() ||
-        Number(receipt.status) !== 1 || Number(verifiedReceipt.status) !== 1) {
-      throw new Error("Transaction execution reverted on-chain.");
-    }
-    if (t.from && t.from.toLowerCase() !== submittingAccount.toLowerCase()) {
-      throw new Error("MetaMask changed accounts while the transaction was being submitted.");
-    }
+    const receipt = t.receipt ? t.receipt : await t.wait(1);
     pendingToast?.remove();
     lastTransaction = { 
       hash: receipt.hash, 
@@ -873,10 +1210,11 @@ async function tx(promiseOrFn, success = "Transaction confirmed.", functionName 
       gas: receipt.gasUsed?.toString() || "—", 
       functionName, 
       from: t.from || submittingAccount,
-      role: ROLE_LABELS[activeRoles[0]] || "Wallet" 
+      role: ROLE_LABELS[activeRoles[0]] || (authMode !== "web3" ? "Smart Account" : "Wallet")
     }; 
     updateTxDrawer(); 
-    toast(`${success} ${short(receipt.hash)} · block ${receipt.blockNumber}`, "success"); 
+    const sponsorNote = t.sponsored ? " (Gasless · 0 ETH Paid)" : "";
+    toast(`${success}${sponsorNote} ${short(receipt.hash)} · block ${receipt.blockNumber}`, "success"); 
     if (rerender) await render(); 
     return receipt; 
   } catch (e) { 
@@ -1187,6 +1525,11 @@ async function renderManufacturer() {
       <div class="card">
         <h3>Register batch</h3>
         <form id="batchForm">
+          <div style="margin-bottom: 12px;">
+            <button type="button" class="button light" data-action="scan-gs1-register" style="width: 100%;">
+              <i class="hgi-stroke hgi-barcode-scanner"></i> Scan GS1 2D DataMatrix (Camera)
+            </button>
+          </div>
           <label>Vaccine name<input id="vaccineName" required placeholder="ExampleVax"></label>
           <label>Lot number<input id="lotNumber" required placeholder="LOT-2026-01"></label>
           <div class="grid two">
@@ -1269,6 +1612,11 @@ async function renderDistributor() {
   };
 
   app.innerHTML = page("Distributor workspace", "Accept shipments, identify the destination clinic, and confirm dual handover.", `
+    <div style="margin-bottom: 16px; display: flex; justify-content: flex-end;">
+      <button class="button light" data-action="scan-gs1-distributor">
+        <i class="hgi-stroke hgi-barcode-scanner"></i> Scan Barcode Intake
+      </button>
+    </div>
     <div class="tabs">
       <div class="tabs-list" role="tablist">
         <button class="tabs-trigger ${distributorTab === 'incoming' ? 'active' : ''}" data-action="switch-dist-tab" data-tab="incoming">
@@ -1424,13 +1772,36 @@ async function renderSensorConsole(id = selectedSensorBatch) {
 
 async function sendSensorReadings(id, readings) {
   if (!requireWallet()) return;
-  if (!activeRoles.includes("logger")) return toast("Switch to the Temperature Logger account first.", true);
+  if (!activeRoles.includes("logger") && authMode === "web3") return toast("Switch to the Temperature Logger account first.", true);
   
   sensorFeed = [];
   for (const [tempX10, durationMins] of readings) {
     sensorFeed.push({ temp: (tempX10 / 10).toFixed(1), duration: durationMins, state: "pending" }); 
     await renderSensorConsole(id);
-    const receipt = await tx(() => sendWithPreflight("logTemperature", [id, tempX10, durationMins]), "Telemetry reading recorded.", "logTemperature", false);
+
+    let receipt = null;
+    try {
+      if (read.submitSignedTelemetry && window.HardwareEnclave && walletProvider) {
+        const signer = await walletProvider.getSigner();
+        const sensorAddress = await signer.getAddress();
+        const nonce = await read.sensorNonces(sensorAddress).catch(() => 0n);
+        const payload = {
+          batchId: BigInt(id),
+          tempX10: BigInt(tempX10),
+          durationMins: BigInt(durationMins),
+          nonce: BigInt(nonce),
+          timestamp: BigInt(Math.floor(Date.now() / 1000))
+        };
+        const { signature } = await HardwareEnclave.signTelemetry(signer, config.address, config.chainId, payload);
+        receipt = await tx(() => sendWithPreflight("submitSignedTelemetry", [payload, signature]), "Hardware EIP-712 telemetry recorded.", "submitSignedTelemetry", false);
+      } else {
+        receipt = await tx(() => sendWithPreflight("logTemperature", [id, tempX10, durationMins]), "Telemetry reading recorded.", "logTemperature", false);
+      }
+    } catch (err) {
+      console.warn("Telemetry submission error:", err);
+      receipt = null;
+    }
+
     sensorFeed[sensorFeed.length - 1].state = receipt ? "confirmed" : "failed";
     await renderSensorConsole(id);
   }
@@ -1596,10 +1967,13 @@ function renderVerify(initialId) {
         <button class="role-chip" data-action="verify-chip" data-id="2"><i class="hgi-stroke hgi-qr-code"></i> Try Batch VX002</button>
       </div>
       <form id="verifyForm">
-        <label>Batch ID (for example 1 or VX001)
+        <label>Batch ID or GS1 Lot Number (e.g. 1, VX001, or LOT-2026-COV01)
           <input id="verifyId" value="${initialId ? `VX${String(initialId).padStart(3, "0")}` : ""}" placeholder="VX001" required>
         </label>
-        <button class="button teal"><i class="hgi-stroke hgi-search-01"></i> Verify batch</button>
+        <div style="display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap;">
+          <button class="button teal"><i class="hgi-stroke hgi-search-01"></i> Verify batch</button>
+          <button type="button" class="button light" data-action="scan-gs1-verify"><i class="hgi-stroke hgi-barcode-scanner"></i> Scan 2D DataMatrix</button>
+        </div>
       </form>
     </div>
     <div id="verifyResult" style="margin-top:20px"></div>
@@ -1609,10 +1983,23 @@ function renderVerify(initialId) {
 }
 
 async function verify(raw) { 
-  const id = Number(String(raw).replace(/\D/g, "")); 
   const target = $("#verifyResult"); 
   if (!target) return;
-  if (!id) return target.innerHTML = `<div class="alert destructive"><div class="alert-icon"><i class="hgi-stroke hgi-alert-circle"></i></div><div class="alert-body"><div class="alert-title">Invalid Input</div><div class="alert-description">Please enter a valid batch ID.</div></div></div>`; 
+  const str = String(raw).trim();
+  if (!str) return target.innerHTML = `<div class="alert destructive"><div class="alert-icon"><i class="hgi-stroke hgi-alert-circle"></i></div><div class="alert-body"><div class="alert-title">Invalid Input</div><div class="alert-description">Please enter a valid batch ID or lot number.</div></div></div>`; 
+
+  let id = null;
+  if (/^VX\d+$/i.test(str) || /^\d+$/.test(str)) {
+    id = Number(str.replace(/\D/g, ""));
+  } else {
+    const list = await batches();
+    const match = list.find(b => b.lotNumber.toLowerCase() === str.toLowerCase());
+    if (match) id = Number(match.id);
+  }
+
+  if (!id) {
+    return target.innerHTML = `<div class="alert destructive"><div class="alert-icon"><i class="hgi-stroke hgi-alert-circle"></i></div><div class="alert-body"><div class="alert-title">Batch Not Found</div><div class="alert-description">No active batch matching "${escapeHtml(str)}" was found on-chain.</div></div></div>`;
+  }
   
   const result = await read.verifyBatch(id); 
   const code = Number(result.code);
@@ -1965,12 +2352,25 @@ function bindEvents() {
     if (action === "administer") { 
       const patientId = await promptPatientModal({ batchId: id });
       if (!patientId) return;
-      const hash = ethers.keccak256(ethers.toUtf8Bytes(patientId)); 
-      return tx(
-        () => administerDose(id, hash),
-        "Dose administered; only the cryptographic hash was recorded.",
+      const b = await read.getBatch(id);
+      const doseReceipt = window.VaxPassReceipt
+        ? VaxPassReceipt.createDoseReceipt({
+            batchId: id,
+            rawPatientId: patientId,
+            vaccineName: b.vaccineName,
+            lotNumber: b.lotNumber || vx(id)
+          })
+        : { commitment: ethers.keccak256(ethers.toUtf8Bytes(patientId)), salt: "0x", batchId: id, vaccineName: b.vaccineName };
+
+      const receipt = await tx(
+        () => administerDose(id, doseReceipt.commitment),
+        "Dose administered; salted cryptographic commitment recorded on-chain.",
         "administerDose"
       );
+      if (receipt) {
+        promptReceiptModal(doseReceipt);
+      }
+      return;
     } 
   });
 

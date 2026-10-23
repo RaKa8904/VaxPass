@@ -17,6 +17,11 @@
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <script src="patient-receipt.js"></script>
+  <script src="hardware-enclave.js"></script>
+  <script src="gs1-parser.js"></script>
+  <script src="account-abstraction.js"></script>
 </head>
 <body>
   <header class="topbar">
@@ -47,13 +52,17 @@
     </nav>
 
     <div class="topbar-actions">
+      <div id="gaslessBadge" class="paymaster-chip" title="ERC-4337 Gas Sponsorship Active">
+        <i class="hgi-stroke hgi-flash" aria-hidden="true"></i>
+        <span>Gasless (4337)</span>
+      </div>
       <div id="networkChip" class="network-chip" title="Active blockchain network">
         <span class="network-dot"></span>
         <span id="networkName">Connecting…</span>
       </div>
       <button id="connectButton" class="wallet">
-        <i class="hgi-stroke hgi-wallet-01" aria-hidden="true"></i>
-        <span>Connect wallet</span>
+        <i class="hgi-stroke hgi-fingerprint" aria-hidden="true"></i>
+        <span>Sign in</span>
       </button>
     </div>
   </header>

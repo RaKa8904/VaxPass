@@ -2406,3 +2406,115 @@ table td,
     scroll-behavior: auto !important;
   }
 }
+
+/* ==========================================================================
+   Phase 3: ERC-4337 Account Abstraction & GS1 Scanner Styles
+   ========================================================================== */
+
+.paymaster-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(15, 155, 157, 0.12);
+  border: 1px solid rgba(15, 155, 157, 0.35);
+  color: #0d8b8d;
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 5px 11px;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+  box-shadow: 0 1px 3px rgba(15, 155, 157, 0.08);
+}
+
+.paymaster-chip i {
+  color: #bd7411;
+  font-size: 0.95rem;
+}
+
+.auth-method-list {
+  display: grid;
+  gap: 12px;
+}
+
+.auth-method-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line-light);
+  background: #ffffff;
+  cursor: pointer;
+  text-align: left;
+  transition: all 180ms ease;
+  width: 100%;
+}
+
+.auth-method-card:hover {
+  border-color: var(--teal);
+  background: rgba(15, 155, 157, 0.04);
+  transform: translateY(-1px);
+}
+
+.auth-method-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: rgba(12, 74, 110, 0.08);
+  color: var(--blue-dark);
+  display: grid;
+  place-items: center;
+  font-size: 1.3rem;
+  flex-shrink: 0;
+}
+
+.auth-method-info {
+  flex: 1;
+}
+
+.auth-method-info b {
+  display: block;
+  font-size: 0.92rem;
+  color: var(--ink);
+}
+
+.auth-method-info small {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.scanner-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+#barcodeReader {
+  width: 100%;
+  max-width: 420px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 2px solid var(--teal);
+  background: #071b28;
+}
+
+.scanner-actions {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  justify-content: center;
+}
+
+.gs1-badge-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(15, 155, 157, 0.08);
+  border: 1px dashed var(--teal);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 0.82rem;
+  color: var(--blue-dark);
+}
+

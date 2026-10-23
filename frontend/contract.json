@@ -1,8 +1,9 @@
 {
-  "contractName": "VaxPass",
-  "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+  "contractName": "VaxPassUpgradeable",
+  "address": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+  "implementationAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
   "chainId": 31337,
-  "network": "localhost",
+  "network": "hardhat",
   "abi": [
     {
       "inputs": [],
@@ -28,6 +29,91 @@
         }
       ],
       "name": "AccessControlUnauthorizedAccount",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "target",
+          "type": "address"
+        }
+      ],
+      "name": "AddressEmptyCode",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ECDSAInvalidSignature",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "length",
+          "type": "uint256"
+        }
+      ],
+      "name": "ECDSAInvalidSignatureLength",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "s",
+          "type": "bytes32"
+        }
+      ],
+      "name": "ECDSAInvalidSignatureS",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "implementation",
+          "type": "address"
+        }
+      ],
+      "name": "ERC1967InvalidImplementation",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ERC1967NonPayable",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "FailedInnerCall",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidInitialization",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NotInitializing",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "UUPSUnauthorizedCallContext",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "slot",
+          "type": "bytes32"
+        }
+      ],
+      "name": "UUPSUnsupportedProxiableUUID",
       "type": "error"
     },
     {
@@ -117,6 +203,43 @@
         },
         {
           "indexed": true,
+          "internalType": "uint256",
+          "name": "hopIndex",
+          "type": "uint256"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "from",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "to",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "locationCode",
+          "type": "string"
+        }
+      ],
+      "name": "CustodyHopRecorded",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        },
+        {
+          "indexed": true,
           "internalType": "address",
           "name": "from",
           "type": "address"
@@ -129,7 +252,7 @@
         },
         {
           "indexed": false,
-          "internalType": "enum VaxPass.Status",
+          "internalType": "enum VaxPassUpgradeable.Status",
           "name": "status",
           "type": "uint8"
         }
@@ -149,7 +272,7 @@
         {
           "indexed": true,
           "internalType": "bytes32",
-          "name": "patientHash",
+          "name": "commitment",
           "type": "bytes32"
         },
         {
@@ -159,7 +282,13 @@
           "type": "address"
         }
       ],
-      "name": "DoseAdministered",
+      "name": "DoseAdministeredWithCommitment",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [],
+      "name": "EIP712DomainChanged",
       "type": "event"
     },
     {
@@ -229,6 +358,19 @@
         }
       ],
       "name": "ExcursionDetected",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "version",
+          "type": "uint64"
+        }
+      ],
+      "name": "Initialized",
       "type": "event"
     },
     {
@@ -375,6 +517,37 @@
         {
           "indexed": true,
           "internalType": "uint256",
+          "name": "batchId",
+          "type": "uint256"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "sensor",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "nonce",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "int256",
+          "name": "tempX10",
+          "type": "int256"
+        }
+      ],
+      "name": "TelemetryVerified",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
           "name": "id",
           "type": "uint256"
         },
@@ -398,6 +571,19 @@
         }
       ],
       "name": "TemperatureLogged",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "implementation",
+          "type": "address"
+        }
+      ],
+      "name": "Upgraded",
       "type": "event"
     },
     {
@@ -492,6 +678,32 @@
       "type": "function"
     },
     {
+      "inputs": [],
+      "name": "SENSOR_READING_TYPEHASH",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "UPGRADE_INTERFACE_VERSION",
+      "outputs": [
+        {
+          "internalType": "string",
+          "name": "",
+          "type": "string"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
       "inputs": [
         {
           "internalType": "uint256",
@@ -512,8 +724,36 @@
           "type": "uint256"
         },
         {
+          "internalType": "string",
+          "name": "locationCode",
+          "type": "string"
+        },
+        {
+          "internalType": "bytes",
+          "name": "signature",
+          "type": "bytes"
+        },
+        {
+          "internalType": "string",
+          "name": "notes",
+          "type": "string"
+        }
+      ],
+      "name": "acceptTransfer",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        },
+        {
           "internalType": "bytes32",
-          "name": "patientHash",
+          "name": "commitment",
           "type": "bytes32"
         }
       ],
@@ -557,6 +797,35 @@
         }
       ],
       "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "patientSecret",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint256",
+          "name": "batchId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "salt",
+          "type": "bytes32"
+        }
+      ],
+      "name": "computeCommitment",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "pure",
       "type": "function"
     },
     {
@@ -612,6 +881,34 @@
       "inputs": [
         {
           "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        },
+        {
+          "internalType": "address",
+          "name": "nextCustodian",
+          "type": "address"
+        },
+        {
+          "internalType": "string",
+          "name": "locationCode",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
+          "name": "notes",
+          "type": "string"
+        }
+      ],
+      "name": "dispatchTransfer",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
           "name": "",
           "type": "uint256"
         }
@@ -622,6 +919,49 @@
           "internalType": "bool",
           "name": "",
           "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "eip712Domain",
+      "outputs": [
+        {
+          "internalType": "bytes1",
+          "name": "fields",
+          "type": "bytes1"
+        },
+        {
+          "internalType": "string",
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
+          "name": "version",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "chainId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "address",
+          "name": "verifyingContract",
+          "type": "address"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "salt",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint256[]",
+          "name": "extensions",
+          "type": "uint256[]"
         }
       ],
       "stateMutability": "view",
@@ -715,7 +1055,7 @@
               "type": "address"
             },
             {
-              "internalType": "enum VaxPass.Status",
+              "internalType": "enum VaxPassUpgradeable.Status",
               "name": "status",
               "type": "uint8"
             },
@@ -725,7 +1065,7 @@
               "type": "string"
             }
           ],
-          "internalType": "struct VaxPass.Batch",
+          "internalType": "struct VaxPassUpgradeable.Batch",
           "name": "",
           "type": "tuple"
         }
@@ -746,7 +1086,7 @@
         {
           "components": [
             {
-              "internalType": "enum VaxPass.Status",
+              "internalType": "enum VaxPassUpgradeable.Status",
               "name": "status",
               "type": "uint8"
             },
@@ -766,7 +1106,63 @@
               "type": "string"
             }
           ],
-          "internalType": "struct VaxPass.BatchHistory[]",
+          "internalType": "struct VaxPassUpgradeable.BatchHistory[]",
+          "name": "",
+          "type": "tuple[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        }
+      ],
+      "name": "getCustodyHops",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint256",
+              "name": "hopIndex",
+              "type": "uint256"
+            },
+            {
+              "internalType": "address",
+              "name": "from",
+              "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "internalType": "uint256",
+              "name": "timestamp",
+              "type": "uint256"
+            },
+            {
+              "internalType": "string",
+              "name": "locationCode",
+              "type": "string"
+            },
+            {
+              "internalType": "bytes",
+              "name": "signature",
+              "type": "bytes"
+            },
+            {
+              "internalType": "string",
+              "name": "notes",
+              "type": "string"
+            }
+          ],
+          "internalType": "struct VaxPassUpgradeable.CustodyHop[]",
           "name": "",
           "type": "tuple[]"
         }
@@ -828,11 +1224,62 @@
               "internalType": "uint256",
               "name": "totalExcursionMinutes",
               "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "totalHopsRecorded",
+              "type": "uint256"
             }
           ],
-          "internalType": "struct VaxPass.Stats",
+          "internalType": "struct VaxPassUpgradeable.Stats",
           "name": "",
           "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint256",
+              "name": "batchId",
+              "type": "uint256"
+            },
+            {
+              "internalType": "int256",
+              "name": "tempX10",
+              "type": "int256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "durationMins",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "nonce",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "timestamp",
+              "type": "uint256"
+            }
+          ],
+          "internalType": "struct VaxPassUpgradeable.SensorReading",
+          "name": "reading",
+          "type": "tuple"
+        }
+      ],
+      "name": "getTelemetryDigest",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
         }
       ],
       "stateMutability": "view",
@@ -876,7 +1323,7 @@
               "type": "bool"
             }
           ],
-          "internalType": "struct VaxPass.TemperatureLog[]",
+          "internalType": "struct VaxPassUpgradeable.TemperatureLog[]",
           "name": "",
           "type": "tuple[]"
         }
@@ -900,6 +1347,40 @@
       "name": "grantRole",
       "outputs": [],
       "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "commitment",
+          "type": "bytes32"
+        }
+      ],
+      "name": "hasDoseCommitment",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "administered",
+          "type": "bool"
+        },
+        {
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "internalType": "address",
+          "name": "clinic",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
       "type": "function"
     },
     {
@@ -929,24 +1410,83 @@
     {
       "inputs": [
         {
+          "components": [
+            {
+              "internalType": "uint256",
+              "name": "batchId",
+              "type": "uint256"
+            },
+            {
+              "internalType": "int256",
+              "name": "tempX10",
+              "type": "int256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "durationMins",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "nonce",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "timestamp",
+              "type": "uint256"
+            }
+          ],
+          "internalType": "struct VaxPassUpgradeable.SensorReading",
+          "name": "reading",
+          "type": "tuple"
+        }
+      ],
+      "name": "hashSensorReading",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "pure",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "regulator",
+          "type": "address"
+        }
+      ],
+      "name": "initialize",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
           "internalType": "uint256",
-          "name": "id",
+          "name": "",
           "type": "uint256"
         },
         {
           "internalType": "int256",
-          "name": "tempX10",
+          "name": "",
           "type": "int256"
         },
         {
           "internalType": "uint256",
-          "name": "durationMins",
+          "name": "",
           "type": "uint256"
         }
       ],
       "name": "logTemperature",
       "outputs": [],
-      "stateMutability": "nonpayable",
+      "stateMutability": "pure",
       "type": "function"
     },
     {
@@ -976,6 +1516,19 @@
           "internalType": "address",
           "name": "",
           "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "proxiableUUID",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
         }
       ],
       "stateMutability": "view",
@@ -1142,6 +1695,70 @@
     {
       "inputs": [
         {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "name": "sensorNonces",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint256",
+              "name": "batchId",
+              "type": "uint256"
+            },
+            {
+              "internalType": "int256",
+              "name": "tempX10",
+              "type": "int256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "durationMins",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "nonce",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "timestamp",
+              "type": "uint256"
+            }
+          ],
+          "internalType": "struct VaxPassUpgradeable.SensorReading",
+          "name": "reading",
+          "type": "tuple"
+        },
+        {
+          "internalType": "bytes",
+          "name": "signature",
+          "type": "bytes"
+        }
+      ],
+      "name": "submitSignedTelemetry",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
           "internalType": "bytes4",
           "name": "interfaceId",
           "type": "bytes4"
@@ -1174,6 +1791,24 @@
     {
       "inputs": [
         {
+          "internalType": "address",
+          "name": "newImplementation",
+          "type": "address"
+        },
+        {
+          "internalType": "bytes",
+          "name": "data",
+          "type": "bytes"
+        }
+      ],
+      "name": "upgradeToAndCall",
+      "outputs": [],
+      "stateMutability": "payable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
           "internalType": "uint256",
           "name": "id",
           "type": "uint256"
@@ -1194,6 +1829,46 @@
       ],
       "stateMutability": "view",
       "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "patientSecret",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "salt",
+          "type": "bytes32"
+        }
+      ],
+      "name": "verifyDoseReceipt",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "administered",
+          "type": "bool"
+        },
+        {
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "internalType": "address",
+          "name": "clinic",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
     }
-  ]
+  ],
+  "deployedAt": "2026-10-23T20:25:46.843Z"
 }
