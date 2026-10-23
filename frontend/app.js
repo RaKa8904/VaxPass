@@ -1745,11 +1745,11 @@ function renderBatchTable(batchList, actionsFn = () => "") {
   `;
 }
 
-function renderBatchView(batchList, actionsFn = () => "", emptyTitle = "No vaccine batches found", emptySubtitle = "No batches currently registered.", emptyAction = "") {
-  const filtered = applyFilters(batchList);
+function renderBatchView(batchList, actionsFn = () => "", emptyTitle = "No vaccine batches found", emptySubtitle = "No batches currently registered.", emptyAction = "", isFiltered = false) {
+  const filtered = isFiltered ? applyFilters(batchList) : batchList;
 
   if (!filtered.length) {
-    if (activeStatusFilter !== "all" || searchQuery.trim()) {
+    if (isFiltered && (activeStatusFilter !== "all" || searchQuery.trim())) {
       return emptyState(
         "No matching batches",
         `No batches found matching filter "${activeStatusFilter}"${searchQuery ? ` and search query "${escapeHtml(searchQuery)}"` : ""}.`,
@@ -1995,7 +1995,6 @@ async function renderHome() {
     </section>
 
     ${page("Vaccine Batches Register", "Indexed cold-chain records with GraphQL subsecond query performance.", `
-      ${renderToolbar(list)}
       ${renderBatchView(list, () => "", "No vaccine batches yet", "Register a new batch from the Manufacturer workspace to begin tracking.", '<a class="button teal" href="#/manufacturer"><i class="hgi-stroke hgi-factory"></i> Register First Batch</a>')}
     `)}
     ${activityTicker()}
@@ -2169,7 +2168,7 @@ async function renderManufacturer() {
     </div>
     <h2 style="margin-top:32px">My batches</h2>
     ${mine.length ? renderToolbar(mine) : ''}
-    ${renderBatchView(mine, actions, "No manufacturer batches found", account ? "You haven't registered any batches with this wallet yet." : "Connect the manufacturer wallet to view your batches.", account ? '<a class="button teal" href="#batchForm"><i class="hgi-stroke hgi-factory"></i> Register Batch Above</a>' : '<button class="button teal" data-action="connect"><i class="hgi-stroke hgi-wallet-01"></i> Connect Wallet</button>')}
+    ${renderBatchView(mine, actions, "No manufacturer batches found", account ? "You haven't registered any batches with this wallet yet." : "Connect the manufacturer wallet to view your batches.", account ? '<a class="button teal" href="#batchForm"><i class="hgi-stroke hgi-factory"></i> Register Batch Above</a>' : '<button class="button teal" data-action="connect"><i class="hgi-stroke hgi-wallet-01"></i> Connect Wallet</button>', true)}
   `);
 
   $("#batchForm")?.insertAdjacentHTML("afterbegin", `
@@ -2240,7 +2239,6 @@ async function renderDistributor() {
       </div>
 
       <div style="margin-top: 16px;">
-        ${activeTabList.length ? renderToolbar(activeTabList) : ''}
         ${renderBatchView(
           activeTabList, 
           activeTabActions, 
@@ -2287,7 +2285,6 @@ async function renderClinic() {
       </div>
     </div>
     <div style="margin-top:22px">
-      ${relevant.length ? renderToolbar(relevant) : ''}
       ${renderBatchView(relevant, actions, "No clinic deliveries found", "When a distributor designates your clinic for delivery, the batch will appear here.")}
     </div>
   `);
