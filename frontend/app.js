@@ -23,6 +23,14 @@ const SENSOR_READINGS = {
   breach: [[220, 20], [250, 20]] 
 };
 
+const DEV_PERSONAS = [
+  { name: "Regulator", role: "regulator", index: 0, address: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", icon: "hgi-shield-user" },
+  { name: "Manufacturer", role: "manufacturer", index: 1, address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", icon: "hgi-factory" },
+  { name: "Distributor", role: "distributor", index: 2, address: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC", icon: "hgi-truck-delivery" },
+  { name: "Clinic", role: "clinic", index: 3, address: "0x90F79bf6EB2c4f870365E785982E1f101E93b906", icon: "hgi-hospital-01" },
+  { name: "Temperature Logger", role: "logger", index: 4, address: "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65", icon: "hgi-thermometer-cold" }
+];
+
 let config, read, walletProvider, write, writeContract, account, activeRoles = [], roleIds = {}, rpcProvider;
 let sensorFeed = [], selectedSensorBatch = 1, lastTransaction = null, livePoller = null, activity = [], checkpointId = null;
 let mode = "live", activeDemoRole = "manufacturer", distributorTab = "incoming";
@@ -265,6 +273,22 @@ let html5QrScanner = null;
 
 function promptAuthModal() {
   return new Promise((resolve) => {
+    const isLocalNode = Number(config?.chainId) === 31337;
+    const devPersonasHtml = isLocalNode ? `
+      <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line-light);">
+        <small style="color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 8px;">
+          Local Dev Seeded Personas (One-Click Sign-in)
+        </small>
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;">
+          ${DEV_PERSONAS.map(p => `
+            <button type="button" class="button light dev-persona-select" data-index="${p.index}" style="justify-content: flex-start; font-size: 0.78rem;">
+              <i class="hgi-stroke ${p.icon}"></i> ${p.name}
+            </button>
+          `).join("")}
+        </div>
+      </div>
+    ` : "";
+
     const bodyHtml = `
       <div class="auth-method-list">
         <button type="button" class="auth-method-card" id="authPasskeyBtn">
@@ -296,6 +320,8 @@ function promptAuthModal() {
             <small>Connect MetaMask, Coinbase, or Rabby wallet.</small>
           </div>
         </button>
+
+        ${devPersonasHtml}
       </div>
     `;
 
@@ -308,6 +334,20 @@ function promptAuthModal() {
       cancelText: "Close",
       onMount: ({ resolve: modalResolve }) => {
         $("#modalConfirmBtn")?.style.setProperty("display", "none");
+
+        document.querySelectorAll(".dev-persona-select").forEach(btn => {
+          btn.addEventListener("click", async () => {
+            const idx = Number(btn.dataset.index);
+            const p = DEV_PERSONAS[idx];
+            const signer = await rpcProvider.getSigner(p.index);
+            modalResolve({
+              authType: "dev-persona",
+              smartAccountAddress: p.address,
+              label: `${p.name} (Dev #${p.index})`,
+              signer
+            });
+          });
+        });
 
         $("#authPasskeyBtn")?.addEventListener("click", async () => {
           const user = prompt("Enter courier or clinic identifier (e.g., driver.smith@vaxlogistics.com):", "courier.driver@vaxlogistics.com");
@@ -1068,6 +1108,28 @@ async function handleConnectClick() {
     return connectMetaMask(true);
   }
 
+  if (authChoice.authType === "dev-persona") {
+    account = authChoice.smartAccountAddress;
+    authMode = "dev-persona";
+    smartAccountInfo = authChoice;
+    writeContract = read.connect(authChoice.signer);
+    write = writeContract;
+    walletProvider = null;
+
+    activeRoles = [];
+    for (const [key, id] of Object.entries(roleIds)) {
+      if (await read.hasRole(id, account)) activeRoles.push(key);
+    }
+
+    updateModeControls();
+    toast(`Connected as Dev Persona: ${authChoice.label}`);
+    const nextRole = ROLE_LANDING_ORDER.find(role => activeRoles.includes(role));
+    if (nextRole) {
+      location.hash = `#/${nextRole === "logger" ? "sensor" : nextRole}`;
+    }
+    return render();
+  }
+
   account = authChoice.smartAccountAddress;
   authMode = authChoice.authType;
   smartAccountInfo = authChoice;
@@ -1141,6 +1203,14 @@ async function handleAccountChanged(accounts) {
 let isTxPending = false;
 
 async function sendWithPreflight(method, args = []) {
+  if (authMode === "dev-persona" && writeContract) {
+    const contractMethod = writeContract.getFunction(method);
+    await contractMethod.staticCall(...args);
+    const gasEstimate = await contractMethod.estimateGas(...args);
+    const gasLimit = (gasEstimate * 120n) / 100n;
+    return contractMethod(...args, { gasLimit });
+  }
+
   if (authMode !== "web3" || !walletProvider) {
     console.log(`[Paymaster Flow] Sponsoring transaction for method: ${method}`);
     return VaxPassAA.sendSponsoredTransaction({
@@ -1176,6 +1246,14 @@ async function sendWithPreflight(method, args = []) {
 }
 
 async function administerDose(id, commitment) {
+  if (authMode === "dev-persona" && writeContract) {
+    const contractMethod = writeContract.getFunction("administerDose");
+    await contractMethod.staticCall(id, commitment);
+    const gasEstimate = await contractMethod.estimateGas(id, commitment);
+    const gasLimit = (gasEstimate * 120n) / 100n;
+    return contractMethod(id, commitment, { gasLimit });
+  }
+
   if (authMode !== "web3" || !walletProvider) {
     return VaxPassAA.sendSponsoredTransaction({
       provider: rpcProvider || (window.ethereum ? new ethers.BrowserProvider(window.ethereum) : null),
@@ -1592,11 +1670,26 @@ async function render() {
 
 function renderAccessDenied(role) { 
   const label = ROLE_LABELS[role] || "required"; 
-  const localHint = Number(config.chainId) === 31337 && role === "logger" 
-    ? `<p><b>Local seeded Logger:</b> Hardhat account #4 ending in <span class="address">…6A65</span>. A MetaMask account label does not grant an on-chain role.</p>` 
-    : ""; 
-  const request = role === "logger" ? `<button class="button teal" data-action="request-role" data-role="logger"><i class="hgi-stroke hgi-user-add-01"></i> Request Logger role</button>` : ""; 
+  const isLocalNode = Number(config?.chainId) === 31337;
   
+  const devButtons = isLocalNode ? `
+    <div style="margin-top: 18px; padding: 14px; background: rgba(15, 155, 157, 0.05); border: 1px dashed var(--teal); border-radius: var(--radius-md);">
+      <small style="color: var(--teal); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; display: block; margin-bottom: 8px;">
+        <i class="hgi-stroke hgi-flash"></i> Local Dev Fast-Access
+      </small>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+        ${account ? `
+          <button type="button" class="button teal" data-action="dev-auto-approve-role" data-role="${role}">
+            <i class="hgi-stroke hgi-shield-tick"></i> Dev: Auto-Grant ${label} Role to Current Account (${short(account)})
+          </button>
+        ` : ""}
+        <button type="button" class="button light" data-action="quick-switch-persona" data-role="${role}">
+          <i class="hgi-stroke hgi-user-switch"></i> Switch to Seeded ${label} Account
+        </button>
+      </div>
+    </div>
+  ` : "";
+
   app.innerHTML = page("Access restricted", `This workspace requires the approved ${label} role.`, `
     <div class="alert destructive">
       <div class="alert-icon"><i class="hgi-stroke hgi-shield-user"></i></div>
@@ -1604,17 +1697,77 @@ function renderAccessDenied(role) {
         <div class="alert-title">RBAC Enforcement Active</div>
         <div class="alert-description">
           Connected account: ${copyableAddress(account)}. This address does not possess the on-chain <b>${label}</b> role.
-          ${localHint}
+          ${isLocalNode ? `<p style="margin-top: 6px;"><b>Local Dev Notice:</b> New Passkey or Email Smart Accounts start with zero roles. Click the button below to auto-grant this role via the local regulator.</p>` : ""}
         </div>
       </div>
     </div>
     <div class="actions">
-      ${request}
-      <button class="button teal" data-action="connect"><i class="hgi-stroke hgi-wallet-01"></i> Recheck Account</button>
+      <button class="button teal" data-action="connect"><i class="hgi-stroke hgi-wallet-01"></i> Switch Account</button>
       <a class="button light" href="#/register"><i class="hgi-stroke hgi-user-add-01"></i> Request a Role</a>
       <a class="button light" href="#/"><i class="hgi-stroke hgi-home-01"></i> Return Home</a>
     </div>
+    ${devButtons}
   `); 
+}
+
+async function autoApproveRole(roleKey) {
+  try {
+    const roleId = roleIds[roleKey];
+    if (!roleId || !account) return;
+    const pendingToast = toast(`Granting ${ROLE_LABELS[roleKey]} role to ${short(account)} on-chain…`, "pending");
+    
+    // Regulator is Signer #0 on local node
+    const regulatorSigner = await rpcProvider.getSigner(0);
+    const contractWithRegulator = read.connect(regulatorSigner);
+
+    let tx;
+    try {
+      tx = await contractWithRegulator.grantRole(roleId, account);
+      await tx.wait();
+    } catch {
+      const accSigner = await rpcProvider.getSigner(account).catch(() => regulatorSigner);
+      try {
+        const reqTx = await read.connect(accSigner).requestRole(roleId);
+        await reqTx.wait();
+      } catch (_) {}
+      tx = await contractWithRegulator.approveEntity(account, roleId);
+      await tx.wait();
+    }
+
+    pendingToast?.remove();
+    toast(`Successfully granted ${ROLE_LABELS[roleKey]} role to ${short(account)}!`, "success");
+    if (!activeRoles.includes(roleKey)) activeRoles.push(roleKey);
+    render();
+  } catch (err) {
+    dismissPendingToasts();
+    toast(`Failed to grant role: ${err.message}`, true);
+  }
+}
+
+async function quickSwitchPersona(roleKey) {
+  const persona = DEV_PERSONAS.find(p => p.role === roleKey);
+  if (!persona) return;
+  const signer = await rpcProvider.getSigner(persona.index);
+  account = persona.address;
+  authMode = "dev-persona";
+  smartAccountInfo = {
+    authType: "dev-persona",
+    smartAccountAddress: persona.address,
+    label: `${persona.name} (Dev #${persona.index})`,
+    signer
+  };
+  writeContract = read.connect(signer);
+  write = writeContract;
+  walletProvider = null;
+
+  activeRoles = [];
+  for (const [key, id] of Object.entries(roleIds)) {
+    if (await read.hasRole(id, account)) activeRoles.push(key);
+  }
+
+  updateModeControls();
+  toast(`Switched to Dev ${persona.name} (#${persona.index})`);
+  render();
 }
 
 async function renderHome() {
@@ -2594,6 +2747,16 @@ function bindEvents() {
       searchQuery = "";
       render();
       return;
+    }
+
+    if (action === "dev-auto-approve-role") {
+      const r = actionTarget.dataset.role;
+      return autoApproveRole(r);
+    }
+
+    if (action === "quick-switch-persona") {
+      const r = actionTarget.dataset.role;
+      return quickSwitchPersona(r);
     }
 
     if (action === "dismiss-shield") { 
