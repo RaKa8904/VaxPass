@@ -65,10 +65,13 @@
         <span class="network-dot"></span>
         <span id="networkName">Connecting…</span>
       </div>
-      <button id="connectButton" class="wallet">
-        <i class="hgi-stroke hgi-fingerprint" aria-hidden="true"></i>
-        <span>Sign in</span>
-      </button>
+      <div class="account-menu-container">
+        <button id="connectButton" class="wallet" type="button" aria-haspopup="true" aria-expanded="false">
+          <i class="hgi-stroke hgi-fingerprint" aria-hidden="true"></i>
+          <span>Sign in</span>
+        </button>
+        <div id="accountDropdown" class="account-dropdown" role="menu" aria-hidden="true"></div>
+      </div>
     </div>
   </header>
 

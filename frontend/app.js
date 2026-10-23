@@ -274,54 +274,82 @@ let html5QrScanner = null;
 function promptAuthModal() {
   return new Promise((resolve) => {
     const isLocalNode = Number(config?.chainId) === 31337;
-    const devPersonasHtml = isLocalNode ? `
-      <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line-light);">
-        <small style="color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 8px;">
-          Local Dev Seeded Personas (One-Click Sign-in)
-        </small>
-        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;">
-          ${DEV_PERSONAS.map(p => `
-            <button type="button" class="button light dev-persona-select" data-index="${p.index}" style="justify-content: flex-start; font-size: 0.78rem;">
-              <i class="hgi-stroke ${p.icon}"></i> ${p.name}
-            </button>
-          `).join("")}
-        </div>
-      </div>
-    ` : "";
 
     const bodyHtml = `
-      <div class="auth-method-list">
-        <button type="button" class="auth-method-card" id="authPasskeyBtn">
-          <div class="auth-method-icon">
-            <i class="hgi-stroke hgi-fingerprint"></i>
-          </div>
-          <div class="auth-method-info">
-            <b>WebAuthn Passkey (Biometrics)</b>
-            <small>Touch ID, Face ID, or Windows Hello. Zero gas, instant smart account.</small>
-          </div>
-        </button>
+      <div class="auth-tabs">
+        <div class="auth-tabs-nav" role="tablist">
+          ${isLocalNode ? `<button type="button" class="auth-tab-btn active" data-tab="personas"><i class="hgi-stroke hgi-user-switch"></i> Dev Personas</button>` : ""}
+          <button type="button" class="auth-tab-btn ${!isLocalNode ? 'active' : ''}" data-tab="passkey"><i class="hgi-stroke hgi-fingerprint"></i> Passkey</button>
+          <button type="button" class="auth-tab-btn" data-tab="email"><i class="hgi-stroke hgi-mail-01"></i> Email</button>
+          <button type="button" class="auth-tab-btn" data-tab="web3"><i class="hgi-stroke hgi-wallet-01"></i> Web3</button>
+        </div>
 
-        <button type="button" class="auth-method-card" id="authEmailBtn">
-          <div class="auth-method-icon">
-            <i class="hgi-stroke hgi-mail-01"></i>
-          </div>
-          <div class="auth-method-info">
-            <b>Corporate Email / Employee ID</b>
-            <small>Authenticate with hospital or logistics email address.</small>
-          </div>
-        </button>
+        <div class="auth-tab-panels">
+          ${isLocalNode ? `
+            <div class="auth-tab-panel active" id="tab-panel-personas">
+              <div class="auth-panel-intro">
+                <b>Seeded Local Roles (One-Click Testing)</b>
+                <p>Switch instantly between cold-chain ecosystem actors with pre-funded gas.</p>
+              </div>
+              <div class="dev-personas-grid">
+                ${DEV_PERSONAS.map(p => `
+                  <button type="button" class="dev-persona-btn ${account && account.toLowerCase() === p.address.toLowerCase() ? 'current' : ''}" data-persona-index="${p.index}">
+                    <div class="persona-icon-badge"><i class="hgi-stroke ${p.icon}"></i></div>
+                    <div class="persona-text">
+                      <span class="persona-title">${escapeHtml(p.name)}</span>
+                      <span class="persona-role">${short(p.address)} · Dev #${p.index}</span>
+                    </div>
+                    ${account && account.toLowerCase() === p.address.toLowerCase() ? '<span class="persona-badge-current">Active</span>' : '<i class="hgi-stroke hgi-arrow-right-01 persona-arrow"></i>'}
+                  </button>
+                `).join("")}
+              </div>
+            </div>
+          ` : ""}
 
-        <button type="button" class="auth-method-card" id="authMetaMaskBtn">
-          <div class="auth-method-icon">
-            <i class="hgi-stroke hgi-wallet-01"></i>
+          <div class="auth-tab-panel ${!isLocalNode ? 'active' : ''}" id="tab-panel-passkey">
+            <div class="auth-panel-intro">
+              <b>WebAuthn Passkey (Hardware Biometrics)</b>
+              <p>Sign in using Touch ID, Face ID, or Windows Hello. Zero gas fees, instant ERC-4337 smart account.</p>
+            </div>
+            <div class="auth-inline-form">
+              <label for="passkeyIdentifier">
+                Courier / Clinic Identifier
+                <input id="passkeyIdentifier" type="text" placeholder="courier.driver@vaxlogistics.com" value="courier.driver@vaxlogistics.com" autocomplete="username">
+              </label>
+              <button type="button" class="button teal" id="submitPasskeyAuthBtn" style="width: 100%; margin-top: 6px;">
+                <i class="hgi-stroke hgi-fingerprint"></i> Authenticate with Passkey
+              </button>
+            </div>
           </div>
-          <div class="auth-method-info">
-            <b>Web3 Browser Extension</b>
-            <small>Connect MetaMask, Coinbase, or Rabby wallet.</small>
-          </div>
-        </button>
 
-        ${devPersonasHtml}
+          <div class="auth-tab-panel" id="tab-panel-email">
+            <div class="auth-panel-intro">
+              <b>Corporate Hospital / Logistics Email</b>
+              <p>Authenticate with your enterprise healthcare or supply chain email.</p>
+            </div>
+            <div class="auth-inline-form">
+              <label for="emailIdentifier">
+                Corporate Email Address
+                <input id="emailIdentifier" type="email" placeholder="nurse.joy@saintmarys.org" value="nurse.joy@saintmarys.org" autocomplete="email">
+              </label>
+              <button type="button" class="button teal" id="submitEmailAuthBtn" style="width: 100%; margin-top: 6px;">
+                <i class="hgi-stroke hgi-mail-01"></i> Sign In with Email
+              </button>
+            </div>
+          </div>
+
+          <div class="auth-tab-panel" id="tab-panel-web3">
+            <div class="auth-panel-intro">
+              <b>Web3 Browser Extension</b>
+              <p>Connect MetaMask, Coinbase Wallet, Rabby, or any EIP-1193 compatible wallet.</p>
+            </div>
+            <div style="text-align: center; padding: 12px 0;">
+              <button type="button" class="button blue" id="submitWeb3AuthBtn" style="width: 100%; justify-content: center; padding: 12px 20px; font-size: 0.95rem;">
+                <i class="hgi-stroke hgi-wallet-01"></i> Connect Browser Wallet (MetaMask)
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     `;
 
@@ -335,43 +363,81 @@ function promptAuthModal() {
       onMount: ({ resolve: modalResolve }) => {
         $("#modalConfirmBtn")?.style.setProperty("display", "none");
 
-        document.querySelectorAll(".dev-persona-select").forEach(btn => {
+        // Tab switching logic
+        const tabBtns = document.querySelectorAll(".auth-tab-btn");
+        const panels = document.querySelectorAll(".auth-tab-panel");
+        tabBtns.forEach(btn => {
+          btn.addEventListener("click", () => {
+            tabBtns.forEach(b => b.classList.remove("active"));
+            panels.forEach(p => p.classList.remove("active"));
+            btn.classList.add("active");
+            const targetPanel = $(`#tab-panel-${btn.dataset.tab}`);
+            if (targetPanel) targetPanel.classList.add("active");
+          });
+        });
+
+        // Dev persona clicks
+        document.querySelectorAll("[data-persona-index]").forEach(btn => {
           btn.addEventListener("click", async () => {
-            const idx = Number(btn.dataset.index);
+            const idx = Number(btn.dataset.personaIndex);
             const p = DEV_PERSONAS[idx];
             const signer = await rpcProvider.getSigner(p.index);
             modalResolve({
               authType: "dev-persona",
               smartAccountAddress: p.address,
+              name: p.name,
               label: `${p.name} (Dev #${p.index})`,
+              role: p.role,
+              icon: p.icon,
               signer
             });
           });
         });
 
-        $("#authPasskeyBtn")?.addEventListener("click", async () => {
-          const user = prompt("Enter courier or clinic identifier (e.g., driver.smith@vaxlogistics.com):", "courier.driver@vaxlogistics.com");
-          if (!user) return;
+        // Passkey submit
+        $("#submitPasskeyAuthBtn")?.addEventListener("click", async () => {
+          const user = $("#passkeyIdentifier")?.value?.trim() || "courier.driver@vaxlogistics.com";
           try {
+            const btn = $("#submitPasskeyAuthBtn");
+            if (btn) {
+              btn.disabled = true;
+              btn.innerHTML = `<i class="hgi-stroke hgi-loading-03 spin"></i> Authenticating WebAuthn…`;
+            }
             const res = await VaxPassAA.authenticateWithPasskey(user);
             modalResolve(res);
           } catch (err) {
             toast("Passkey authentication failed: " + err.message, true);
+            const btn = $("#submitPasskeyAuthBtn");
+            if (btn) {
+              btn.disabled = false;
+              btn.innerHTML = `<i class="hgi-stroke hgi-fingerprint"></i> Authenticate with Passkey`;
+            }
           }
         });
 
-        $("#authEmailBtn")?.addEventListener("click", async () => {
-          const email = prompt("Enter corporate email (e.g., nurse.joy@saintmarys.org):", "nurse.joy@saintmarys.org");
-          if (!email) return;
+        // Email submit
+        $("#submitEmailAuthBtn")?.addEventListener("click", async () => {
+          const email = $("#emailIdentifier")?.value?.trim() || "nurse.joy@saintmarys.org";
           try {
+            const btn = $("#submitEmailAuthBtn");
+            if (btn) {
+              btn.disabled = true;
+              btn.innerHTML = `<i class="hgi-stroke hgi-loading-03 spin"></i> Connecting…`;
+            }
             const res = await VaxPassAA.authenticateWithEmail(email);
             modalResolve(res);
           } catch (err) {
             toast("Email login failed: " + err.message, true);
+            const btn = $("#submitEmailAuthBtn");
+            if (btn) {
+              btn.disabled = false;
+              btn.innerHTML = `<i class="hgi-stroke hgi-mail-01"></i> Sign In with Email`;
+            }
           }
         });
 
-        $("#authMetaMaskBtn")?.addEventListener("click", () => {
+        // Web3 submit
+        $("#submitWeb3AuthBtn")?.addEventListener("click", () => {
           modalResolve({ authType: "web3" });
         });
       }
@@ -974,15 +1040,18 @@ function updateModeControls() {
     const label = account 
       ? (smartAccountInfo?.label ? smartAccountInfo.label.split("@")[0] : short(account))
       : "Sign in";
+    const caretIcon = account ? `<i class="hgi-stroke hgi-arrow-down-01" style="font-size: 0.8rem; margin-left: 2px; opacity: 0.8;" aria-hidden="true"></i>` : "";
     connectBtn.innerHTML = `
       <i class="hgi-stroke ${icon}" aria-hidden="true"></i>
       <span>${escapeHtml(label)}</span>
+      ${caretIcon}
     `;
     if (account) {
       connectBtn.classList.add("connected");
-      connectBtn.title = `Signed in (${authMode}): ${account}`;
+      connectBtn.title = `Signed in (${authMode}): ${account} (Click to open account menu)`;
     } else {
       connectBtn.classList.remove("connected");
+      connectBtn.title = "Click to sign in with Passkey, Email, or Web3";
     }
   }
 
@@ -1084,23 +1153,134 @@ function bindPolishEvents() {
   }); 
 }
 
-async function handleConnectClick() {
-  if (account) {
-    const doDisconnect = confirm(`Currently signed in as:\n${account}\n(${authMode.toUpperCase()})\n\nDo you want to switch accounts or sign out?`);
-    if (doDisconnect) {
-      account = null;
-      smartAccountInfo = null;
-      authMode = "web3";
-      writeContract = null;
-      write = null;
-      activeRoles = [];
-      updateModeControls();
-      toast("Signed out.");
-      return render();
-    }
+function renderAccountDropdown() {
+  const dd = $("#accountDropdown");
+  if (!dd) return;
+  if (!account) {
+    dd.innerHTML = "";
+    dd.classList.remove("active");
+    dd.setAttribute("aria-hidden", "true");
+    $("#connectButton")?.setAttribute("aria-expanded", "false");
     return;
   }
 
+  // Determine current persona / role
+  let roleLabel = "Guest / Signer";
+  let roleIcon = "hgi-user";
+  if (activeRoles.length) {
+    roleLabel = activeRoles.map(r => ROLE_LABELS[r] || r).join(", ");
+    const primary = activeRoles[0];
+    if (primary === "regulator") roleIcon = "hgi-shield-user";
+    else if (primary === "manufacturer") roleIcon = "hgi-factory";
+    else if (primary === "distributor") roleIcon = "hgi-truck-delivery";
+    else if (primary === "clinic") roleIcon = "hgi-hospital-01";
+    else if (primary === "logger") roleIcon = "hgi-thermometer-cold";
+  } else if (authMode === "dev-persona" && smartAccountInfo?.role) {
+    roleLabel = ROLE_LABELS[smartAccountInfo.role] || smartAccountInfo.role;
+    roleIcon = smartAccountInfo.icon || "hgi-user";
+  }
+
+  const displayName = smartAccountInfo?.name || smartAccountInfo?.label || (authMode === "dev-persona" ? "Dev Persona" : (authMode === "passkey" ? "Passkey User" : (authMode === "email" ? "Email User" : "Web3 Wallet")));
+
+  const networkLabel = config ? (Number(config.chainId) === 31337 ? "Hardhat (31337)" : Number(config.chainId) === 11155111 ? "Sepolia" : `Chain ${config.chainId}`) : "Local Node";
+
+  const modeBadgeText = authMode === "dev-persona" ? "Local Dev Persona" : authMode === "passkey" ? "Passkey (WebAuthn)" : authMode === "email" ? "Corporate Email" : "Web3 Extension";
+
+  dd.innerHTML = `
+    <div class="account-dropdown-header">
+      <div class="dropdown-avatar">
+        <i class="hgi-stroke ${roleIcon}" aria-hidden="true"></i>
+      </div>
+      <div class="dropdown-identity">
+        <span class="dropdown-name" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</span>
+        <div class="dropdown-addr-row">
+          <span class="dropdown-address">${short(account)}</span>
+          <button type="button" class="mini-copy-btn" data-action="copy-account-addr" data-address="${escapeHtml(account)}" title="Copy address: ${escapeHtml(account)}" aria-label="Copy address">
+            <i class="hgi-stroke hgi-copy-01" aria-hidden="true"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="dropdown-divider"></div>
+
+    <div class="dropdown-info-list">
+      <div class="dropdown-info-row">
+        <span class="info-label">Active Role</span>
+        <span class="info-value"><span class="badge safe" style="padding: 2px 8px; font-size: 0.72rem;"><i class="hgi-stroke ${roleIcon}"></i> ${escapeHtml(roleLabel)}</span></span>
+      </div>
+      <div class="dropdown-info-row">
+        <span class="info-label">Network</span>
+        <span class="info-value"><span class="badge" style="padding: 2px 8px; font-size: 0.72rem; background: #e0f2fe; color: #0284c7;"><i class="hgi-stroke hgi-server-03"></i> ${escapeHtml(networkLabel)}</span></span>
+      </div>
+      <div class="dropdown-info-row">
+        <span class="info-label">Auth Method</span>
+        <span class="info-value"><span class="badge" style="padding: 2px 8px; font-size: 0.72rem; background: #f1f5f9; color: var(--ink);"><i class="hgi-stroke hgi-fingerprint"></i> ${escapeHtml(modeBadgeText)}</span></span>
+      </div>
+      <div class="dropdown-info-row">
+        <span class="info-label">Gas Status</span>
+        <span class="info-value"><span class="badge safe" style="padding: 2px 8px; font-size: 0.72rem;"><i class="hgi-stroke hgi-flash"></i> Paymaster Sponsored</span></span>
+      </div>
+    </div>
+
+    <div class="dropdown-divider"></div>
+
+    <div class="dropdown-menu-actions">
+      <button type="button" class="dropdown-btn" data-action="switch-account-action">
+        <i class="hgi-stroke hgi-user-swap-01" aria-hidden="true"></i>
+        <span>Switch Account / Persona</span>
+      </button>
+      <button type="button" class="dropdown-btn danger" data-action="sign-out-action">
+        <i class="hgi-stroke hgi-logout-01" aria-hidden="true"></i>
+        <span>Sign Out</span>
+      </button>
+    </div>
+  `;
+}
+
+function toggleAccountDropdown(force) {
+  const dd = $("#accountDropdown");
+  const btn = $("#connectButton");
+  if (!dd) return;
+  const isCurrentlyActive = dd.classList.contains("active");
+  const show = typeof force === "boolean" ? force : !isCurrentlyActive;
+  
+  if (show && account) {
+    renderAccountDropdown();
+    dd.classList.add("active");
+    dd.setAttribute("aria-hidden", "false");
+    btn?.setAttribute("aria-expanded", "true");
+  } else {
+    dd.classList.remove("active");
+    dd.setAttribute("aria-hidden", "true");
+    btn?.setAttribute("aria-expanded", "false");
+  }
+}
+
+function signOut() {
+  toggleAccountDropdown(false);
+  account = null;
+  smartAccountInfo = null;
+  authMode = "web3";
+  writeContract = null;
+  write = null;
+  activeRoles = [];
+  updateModeControls();
+  toast("Signed out successfully.");
+  location.hash = "#/";
+  render();
+}
+
+async function handleConnectClick() {
+  if (account) {
+    toggleAccountDropdown();
+    return;
+  }
+  openSignInFlow();
+}
+
+async function openSignInFlow() {
+  toggleAccountDropdown(false);
   const authChoice = await promptAuthModal();
   if (!authChoice) return;
 
@@ -2661,10 +2841,36 @@ function drawBars(values, labels) {
 
 function bindEvents() { 
   document.addEventListener("click", async e => { 
+    // Outside-click detection for account dropdown
+    if (!e.target.closest(".account-menu-container")) {
+      toggleAccountDropdown(false);
+    }
+
     const actionTarget = e.target.closest("[data-action]");
     if (!actionTarget) return;
     const action = actionTarget.dataset.action; 
     if (!action) return;
+
+    if (action === "switch-account-action") {
+      return openSignInFlow();
+    }
+
+    if (action === "sign-out-action") {
+      return signOut();
+    }
+
+    if (action === "copy-account-addr") {
+      const addr = actionTarget.dataset.address;
+      if (addr) {
+        try {
+          await navigator.clipboard.writeText(addr);
+          toast(`Account address copied: ${short(addr)}`);
+        } catch {
+          toast(`Address: ${addr}`);
+        }
+      }
+      return;
+    }
 
     if (action === "connect") return connect(); 
     
