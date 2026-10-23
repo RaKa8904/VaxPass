@@ -358,8 +358,7 @@ function promptAuthModal() {
       subtitle: "ERC-4337 Smart Account & Gasless Session",
       iconHtml: '<i class="hgi-stroke hgi-fingerprint"></i>',
       bodyHtml,
-      confirmText: "Cancel",
-      cancelText: "Close",
+      confirmText: null,
       onMount: ({ resolve: modalResolve }) => {
         $("#modalConfirmBtn")?.style.setProperty("display", "none");
 
@@ -464,8 +463,7 @@ function openBarcodeScannerModal(onScannedCallback) {
       subtitle: "Scan pharmaceutical packaging barcode or DataMatrix",
       iconHtml: '<i class="hgi-stroke hgi-barcode-scanner"></i>',
       bodyHtml,
-      confirmText: "Close",
-      cancelText: "Cancel",
+      confirmText: null,
       onMount: ({ resolve: modalResolve }) => {
         $("#modalConfirmBtn")?.style.setProperty("display", "none");
 
@@ -525,11 +523,15 @@ function openBarcodeScannerModal(onScannedCallback) {
 }
 
 function promptReceiptModal(receipt) {
+  const qrUrl = verificationUrl(receipt.batchId);
   const bodyHtml = `
-    <div style="background: #f8fafc; border: 1px solid var(--line-light); border-radius: var(--radius-md); padding: 16px; margin-bottom: 16px; text-align: center;">
-      <div id="receiptQrCode" style="display: inline-block; padding: 10px; background: white; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 12px;"></div>
-      <p style="margin: 0; font-size: 0.92rem; font-weight: 700; color: var(--ink);">${escapeHtml(receipt.vaccineName || "COVID-19 Vaccine")}</p>
-      <small style="color: var(--muted);">Batch ${vx(receipt.batchId)} · Administered: ${new Date().toLocaleDateString()}</small>
+    <div style="background: #f8fafc; border: 1px solid var(--line-light); border-radius: var(--radius-md); padding: 18px; margin-bottom: 16px; text-align: center;">
+      <div id="receiptQrCode" style="display: inline-flex; align-items: center; justify-content: center; padding: 10px; background: white; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 10px; min-width: 140px; min-height: 140px; box-shadow: 0 4px 12px rgba(12, 74, 110, 0.06);"></div>
+      <p style="margin: 0; font-size: 0.96rem; font-weight: 700; color: var(--ink);">${escapeHtml(receipt.vaccineName || "COVID-19 Vaccine")}</p>
+      <small style="color: var(--muted); display: block; margin-top: 2px;">Batch ${vx(receipt.batchId)} · Administered: ${new Date().toLocaleDateString()}</small>
+      <div style="margin-top: 8px;">
+        <span class="badge safe" style="font-size: 0.72rem; padding: 2px 8px;"><i class="hgi-stroke hgi-qr-code"></i> Scannable Digital Passport</span>
+      </div>
     </div>
 
     <div class="detail-list" style="font-size: 0.8rem;">
@@ -540,7 +542,7 @@ function promptReceiptModal(receipt) {
     </div>
 
     <p class="privacy-guarantee-note" style="margin-top: 14px;">
-      <b>Digital Pass Guarantee:</b> This cryptographic receipt contains a private 256-bit blinding salt. Your identity cannot be reverse-engineered on-chain. Present this pass or QR code for proof of vaccination.
+      <b>Digital Pass Guarantee:</b> This cryptographic receipt contains a private 256-bit blinding salt. Your identity cannot be reverse-engineered on-chain. Present this QR code or certificate for instant proof of vaccination.
     </p>
   `;
 
@@ -550,21 +552,27 @@ function promptReceiptModal(receipt) {
     iconHtml: '<i class="hgi-stroke hgi-checkmark-circle-02" style="color: #059669;"></i>',
     bodyHtml,
     confirmText: "Copy Receipt JSON",
-    cancelText: "Done",
     onMount: ({ form }) => {
-      if (typeof QRCode !== "undefined") {
-        const qrContainer = $("#receiptQrCode");
-        if (qrContainer) {
+      const qrContainer = $("#receiptQrCode");
+      if (qrContainer && typeof QRCode !== "undefined") {
+        try {
+          qrContainer.replaceChildren();
           new QRCode(qrContainer, {
-            text: JSON.stringify({
-              protocol: "VaxPass-Enterprise-v2",
-              batchId: receipt.batchId,
-              commitment: receipt.commitment,
-              salt: receipt.salt
-            }),
+            text: qrUrl,
             width: 140,
-            height: 140
+            height: 140,
+            colorDark: "#0c4a6e",
+            colorLight: "#ffffff",
+            correctLevel: QRCode.CorrectLevel.M
           });
+        } catch (err) {
+          console.warn("QRCode rendering in receipt modal failed:", err);
+          qrContainer.innerHTML = `
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--teal); gap: 6px;">
+              <i class="hgi-stroke hgi-qr-code" style="font-size: 3rem;"></i>
+              <small style="font-size: 0.72rem; color: var(--muted);">Scan Batch ${vx(receipt.batchId)}</small>
+            </div>
+          `;
         }
       }
 
@@ -595,10 +603,12 @@ function closeModal() {
   }, 220);
 }
 
-function promptModal({ title, subtitle, iconHtml, bodyHtml, confirmText = "Confirm", cancelText = "Cancel", isDanger = false, onMount }) {
+function promptModal({ title, subtitle, iconHtml, bodyHtml, confirmText = "Confirm", isDanger = false, onMount }) {
   return new Promise((resolve) => {
     const container = $("#modalContainer");
     if (!container) return resolve(null);
+
+    const hasConfirm = Boolean(confirmText);
 
     container.innerHTML = `
       <div class="modal-card" role="dialog" aria-modal="true">
@@ -616,10 +626,11 @@ function promptModal({ title, subtitle, iconHtml, bodyHtml, confirmText = "Confi
           <div class="modal-body">
             ${bodyHtml}
           </div>
-          <div class="modal-footer">
-            <button type="button" class="button light" data-modal-action="cancel">${escapeHtml(cancelText)}</button>
-            <button type="submit" class="button ${isDanger ? 'danger' : 'teal'}" id="modalConfirmBtn">${escapeHtml(confirmText)}</button>
-          </div>
+          ${hasConfirm ? `
+            <div class="modal-footer">
+              <button type="submit" class="button ${isDanger ? 'danger' : 'teal'}" id="modalConfirmBtn">${escapeHtml(confirmText)}</button>
+            </div>
+          ` : ""}
         </form>
       </div>
     `;
@@ -629,7 +640,6 @@ function promptModal({ title, subtitle, iconHtml, bodyHtml, confirmText = "Confi
 
     const form = $("#customModalForm");
     const closeBtn = container.querySelector(".modal-close-btn");
-    const cancelBtn = container.querySelector('[data-modal-action="cancel"]');
 
     let resolved = false;
     const cleanupAndResolve = (val) => {
@@ -652,7 +662,6 @@ function promptModal({ title, subtitle, iconHtml, bodyHtml, confirmText = "Confi
       if (e.target === container) cleanupAndResolve(null);
     };
 
-    cancelBtn?.addEventListener("click", () => cleanupAndResolve(null));
     closeBtn?.addEventListener("click", () => cleanupAndResolve(null));
 
     if (onMount) {
@@ -2625,6 +2634,8 @@ async function verify(raw) {
 
 async function renderAnalytics() {
   let statsData = null;
+  const allBatches = await batches();
+
   if (window.VaxPassGraphQL) {
     try {
       const res = await VaxPassGraphQL.fetchProtocolStats(async () => read.getStats());
@@ -2635,69 +2646,95 @@ async function renderAnalytics() {
       console.warn("GraphQL protocol stats failed, using on-chain RPC fallback:", err);
     }
   }
+
   if (!statsData) {
-    const raw = await read.getStats();
-    statsData = {
-      totalBatches: Number(raw.totalBatches),
-      dosesAdministered: Number(raw.dosesAdministered),
-      spoiled: Number(raw.spoiled),
-      recalled: Number(raw.recalled),
-      expired: Number(raw.expired)
-    };
+    try {
+      const raw = await read.getStats();
+      statsData = {
+        totalBatches: Number(raw.totalBatches),
+        dosesAdministered: Number(raw.dosesAdministered),
+        spoiled: Number(raw.spoiled),
+        recalled: Number(raw.recalled),
+        expired: Number(raw.expired),
+        totalExcursionMinutes: Number(raw.totalExcursionMinutes || 0),
+        totalHopsRecorded: Number(raw.totalHopsRecorded || 0)
+      };
+    } catch (err) {
+      console.warn("On-chain getStats failed, computing aggregates from batch list:", err);
+      statsData = {};
+    }
   }
 
-  const total = Number(statsData.totalBatches || 0);
-  const spoiled = Number(statsData.spoiled || 0);
-  const recalled = Number(statsData.recalled || 0);
-  const expired = Number(statsData.expired || 0);
-  const doses = Number(statsData.dosesAdministered || 0);
-  const wastage = total ? (((spoiled + recalled + expired) / total) * 100).toFixed(1) : "0.0";
+  const now = Math.floor(Date.now() / 1000);
+  const total = Number(statsData.totalBatches || allBatches.length || 0);
+  const spoiled = Number(statsData.spoiled ?? allBatches.filter(b => Number(b.status) === 5).length);
+  const recalled = Number(statsData.recalled ?? allBatches.filter(b => Number(b.status) === 6).length);
+  const expired = Number(statsData.expired ?? allBatches.filter(b => Number(b.status) === 7 || Number(b.effectiveExpiry) <= now).length);
 
-  app.innerHTML = page("Network analytics", "A real-time snapshot of batch volumes, patient impact, and cold-chain compliance.", `
+  let doses = Number(statsData.dosesAdministered || 0);
+  if (!doses && allBatches.length) {
+    doses = allBatches.reduce((acc, b) => acc + Math.max(0, Number(b.totalDoses) - Number(b.dosesRemaining)), 0);
+  }
+
+  let totalExcursion = Number(statsData.totalExcursionMinutes || 0);
+  if (!totalExcursion && allBatches.length) {
+    totalExcursion = allBatches.reduce((acc, b) => acc + Number(b.excursionMinsUsed || 0), 0);
+  }
+
+  const inTransit = allBatches.filter(b => Number(b.status) === 1).length;
+  const delivered = allBatches.filter(b => Number(b.status) === 2).length;
+  const inUse = allBatches.filter(b => Number(b.status) === 3).length;
+  const safeCount = allBatches.filter(b => statusClass(b) === "safe").length;
+
+  const totalLoss = spoiled + recalled + expired;
+  const complianceRate = total ? Math.max(0, 100 - ((totalLoss / total) * 100)).toFixed(1) : "100.0";
+  const wastage = total ? ((totalLoss / total) * 100).toFixed(1) : "0.0";
+
+  app.innerHTML = page("Network Analytics & Supply Chain Telemetry", "Real-time on-chain metrics, thermal compliance, and patient immunization volume.", `
     <div class="grid four analytics-stats">
       <div class="stat-card">
         <div class="stat-card-header">
-          <span class="stat-card-kicker">Tracked inventory</span>
+          <span class="stat-card-kicker">Tracked Inventory</span>
           <div class="stat-card-icon"><i class="hgi-stroke hgi-package"></i></div>
         </div>
         <div class="stat-card-value">${total}</div>
-        <div class="stat-card-caption">Batch${total === 1 ? "" : "es"} registered</div>
+        <div class="stat-card-caption">${inTransit} in transit · ${delivered} at clinic</div>
       </div>
 
       <div class="stat-card">
         <div class="stat-card-header">
-          <span class="stat-card-kicker">Patient impact</span>
+          <span class="stat-card-kicker">Patient Impact</span>
           <div class="stat-card-icon"><i class="hgi-stroke hgi-injection"></i></div>
         </div>
         <div class="stat-card-value">${doses}</div>
-        <div class="stat-card-caption">Doses administered</div>
+        <div class="stat-card-caption">Doses administered (Zero-PII)</div>
       </div>
 
       <div class="stat-card">
         <div class="stat-card-header">
-          <span class="stat-card-kicker">Safety action</span>
-          <div class="stat-card-icon"><i class="hgi-stroke hgi-alert-triangle"></i></div>
+          <span class="stat-card-kicker">Cold-Chain Compliance</span>
+          <div class="stat-card-icon"><i class="hgi-stroke hgi-checkmark-circle-02"></i></div>
         </div>
-        <div class="stat-card-value">${spoiled}</div>
-        <div class="stat-card-caption">Spoiled batches</div>
+        <div class="stat-card-value">${complianceRate}%</div>
+        <div class="stat-card-caption">${safeCount} of ${total} batches in safe status</div>
       </div>
 
       <div class="stat-card">
         <div class="stat-card-header">
-          <span class="stat-card-kicker">Loss signal</span>
-          <div class="stat-card-icon"><i class="hgi-stroke hgi-analytics-01"></i></div>
+          <span class="stat-card-kicker">Thermal Excursion</span>
+          <div class="stat-card-icon"><i class="hgi-stroke hgi-thermometer-cold"></i></div>
         </div>
-        <div class="stat-card-value">${wastage}%</div>
-        <div class="stat-card-caption">Wastage rate</div>
+        <div class="stat-card-value">${totalExcursion} min</div>
+        <div class="stat-card-caption">Cumulative deviation logged</div>
       </div>
     </div>
 
-    <section class="card analytics-chart-card">
+    <section class="card analytics-chart-card" style="margin-top: 24px;">
       <div class="section-heading">
         <div>
-          <span class="stat-kicker">At a glance</span>
-          <h2>Batch outcomes</h2>
-          <p>Comparative metrics across on-chain status categories.</p>
+          <span class="stat-kicker">Distribution Overview</span>
+          <h2>Batch Lifecycle & Inventory Status</h2>
+          <p>Comparative metrics across on-chain states and clinical progress.</p>
         </div>
         <span class="analytics-total">${total} total batch${total === 1 ? "" : "es"}</span>
       </div>
@@ -2705,21 +2742,69 @@ async function renderAnalytics() {
         <canvas id="barChart" class="chart" width="900" height="300"></canvas>
       </div>
       <div class="chart-legend">
-        <span><i class="legend-swatch batches"></i>Tracked</span>
-        <span><i class="legend-swatch doses"></i>Doses</span>
-        <span><i class="legend-swatch spoiled"></i>Spoiled</span>
-        <span><i class="legend-swatch recalled"></i>Recalled</span>
-        <span><i class="legend-swatch expired"></i>Expired</span>
+        <span><i class="legend-swatch batches"></i>Tracked (${total})</span>
+        <span><i class="legend-swatch doses"></i>Doses (${doses})</span>
+        <span><i class="legend-swatch spoiled"></i>Spoiled (${spoiled})</span>
+        <span><i class="legend-swatch recalled"></i>Recalled (${recalled})</span>
+        <span><i class="legend-swatch expired"></i>Expired (${expired})</span>
       </div>
       <div class="analytics-foot">
-        <span>Recalled batches: <b>${recalled}</b></span>
-        <span>Expired batches: <b>${expired}</b></span>
-        <span>Total thermal excursion logged: <b>${stats.totalExcursionMinutes} min</b></span>
+        <span>Active in transit: <b>${inTransit}</b></span>
+        <span>Delivered to clinics: <b>${delivered}</b></span>
+        <span>Spoiled / Loss batches: <b>${totalLoss}</b></span>
+        <span>Total thermal excursion: <b>${totalExcursion} min</b></span>
       </div>
     </section>
+
+    ${allBatches.length ? `
+      <section class="card" style="margin-top: 24px;">
+        <div class="section-heading">
+          <div>
+            <span class="stat-kicker">Real-time ledger</span>
+            <h2>Active Batch Registry Breakdown</h2>
+            <p>On-chain status, custody, and thermal compliance per registered batch.</p>
+          </div>
+        </div>
+        <div class="data-table-container">
+          <table class="enterprise-data-table">
+            <thead>
+              <tr>
+                <th>Batch ID</th>
+                <th>Vaccine & Lot</th>
+                <th>Status</th>
+                <th>Current Custodian</th>
+                <th>Remaining Doses</th>
+                <th>Effective Expiry</th>
+                <th style="text-align: right;">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${allBatches.slice(0, 8).map(b => `
+                <tr>
+                  <td><b>${vx(b.id)}</b></td>
+                  <td>
+                    <div style="font-weight: 600;">${escapeHtml(b.vaccineName)}</div>
+                    <small style="color: var(--muted); font-size: 0.74rem;">Lot: ${escapeHtml(b.lotNumber)}</small>
+                  </td>
+                  <td>${badge(b)}</td>
+                  <td>${copyableAddress(b.custodian)}</td>
+                  <td><b>${Number(b.dosesRemaining)}</b> / ${Number(b.totalDoses)}</td>
+                  <td>${date(b.effectiveExpiry)}</td>
+                  <td style="text-align: right;">
+                    <a class="button light" style="padding: 4px 10px; font-size: 0.78rem;" href="#/batch/${b.id}">
+                      <i class="hgi-stroke hgi-passport"></i> View Passport
+                    </a>
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    ` : ""}
   `);
 
-  drawBars([total, Number(stats.dosesAdministered), spoiled, recalled, expired], ["Batches", "Doses", "Spoiled", "Recalled", "Expired"]);
+  drawBars([total, doses, spoiled, recalled, expired], ["Batches", "Doses", "Spoiled", "Recalled", "Expired"]);
 }
 
 /* ==========================================================================
